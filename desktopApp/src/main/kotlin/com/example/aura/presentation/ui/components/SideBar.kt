@@ -10,11 +10,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import aura.desktopapp.generated.resources.Res
-import aura.desktopapp.generated.resources.images_regular_full
-import aura.desktopapp.generated.resources.setting_svgrepo_com
-import aura.desktopapp.generated.resources.video_travel_image_svgrepo_com
-import com.example.aura.presentation.ui.viewmodels.menuItems
+import com.example.aura.presentation.viewmodels.menuItems
 import org.jetbrains.compose.resources.painterResource
 
 @Composable

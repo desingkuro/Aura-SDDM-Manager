@@ -29,10 +29,19 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import aura.desktopapp.generated.resources.Res
 import aura.desktopapp.generated.resources.add_to_queue_svgrepo_com
+import com.example.aura.presentation.utils.openFilePicker
+import com.example.aura.presentation.viewmodels.MediaViewModel
 import org.jetbrains.compose.resources.painterResource
+import java.io.File
 
 @Composable
-fun MainScreen(modifier: Modifier = Modifier,pahtActual: MutableState<String>) {
+fun MainScreen(
+    modifier: Modifier = Modifier,
+    pahtActual: MutableState<String>,
+    listFiles: List<File>,
+    viewModel: MediaViewModel
+) {
+
     val scrollState = rememberScrollState()
     var textButtom: String = ""
     if (pahtActual.value == "image") {
@@ -62,24 +71,41 @@ fun MainScreen(modifier: Modifier = Modifier,pahtActual: MutableState<String>) {
             Box(
                 modifier = Modifier.weight(1f).fillMaxWidth().padding(vertical = 20.dp)
             ){
-                FlowRow(modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp)
-                    .verticalScroll(scrollState),
-                    horizontalArrangement = Arrangement.spacedBy(20.dp, Alignment.CenterHorizontally),
-                    verticalArrangement = Arrangement.spacedBy(20.dp),
-                ){
-                    repeat(10){index ->
-                        CardMultimedia()
+                if (listFiles.isNotEmpty()) {
+                    FlowRow(modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                        .verticalScroll(scrollState),
+                        horizontalArrangement = Arrangement.spacedBy(20.dp, Alignment.Start),
+                        verticalArrangement = Arrangement.spacedBy(20.dp),
+                    ){
+                        listFiles.forEach { file ->
+                            CardMultimedia()
+                        }
+                    }
+                    VerticalScrollbar(
+                        modifier = Modifier.align(Alignment.CenterEnd)
+                            .fillMaxHeight()
+                            .background(Color.Gray, shape = RoundedCornerShape(8.dp))
+                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                        adapter = rememberScrollbarAdapter(scrollState = scrollState),
+                    )
+                }else{
+                    Column (
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .fillMaxHeight()
+                        ,verticalArrangement = Arrangement.Center,
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ){
+                        Text(
+                            text = "Importa un fondo",
+                            color = Color.Gray,
+                            fontSize = 28.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
                     }
                 }
-                VerticalScrollbar(
-                    modifier = Modifier.align(Alignment.CenterEnd)
-                        .fillMaxHeight()
-                        .background(Color.Gray, shape = RoundedCornerShape(8.dp))
-                        .padding(horizontal = 6.dp, vertical = 2.dp),
-                    adapter = rememberScrollbarAdapter(scrollState = scrollState),
-                )
             }
             // BOTÓN DE IMPORTAR IMAGEN
             Row(
@@ -88,7 +114,7 @@ fun MainScreen(modifier: Modifier = Modifier,pahtActual: MutableState<String>) {
                     .height(100.dp)
                     .clip(RoundedCornerShape(12.dp))
                     .background(Color(0xFF333333))
-                    .clickable { /* Acción para abrir el selector de archivos */ }
+                    .clickable { openFilePicker { archiveSelected -> viewModel.importNewFile(archiveSelected) } }
                     .padding(16.dp),
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically

@@ -6,16 +6,26 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.example.aura.presentation.ui.components.FooterScreen
 import com.example.aura.presentation.ui.components.HeaderScreen
 import com.example.aura.presentation.ui.components.MainScreen
+import com.example.aura.presentation.viewmodels.MediaViewModel
 
 @Composable
-fun ImageScreen(modifier: Modifier = Modifier, routActual: MutableState<String>) { // 1. Recibe el modifier
+fun ImageScreen(modifier: Modifier = Modifier, routActual: MutableState<String>) {
+
+    val viewModel = remember { MediaViewModel() }
+
+    //launchEffect ejecuta una sola vez cuando la pantalla se abre
+    LaunchedEffect(Unit){
+        viewModel.loadImages()
+    }
 
     Column(
         modifier = modifier // 2. Usa el modifier del padre (el weight(0.75f))
@@ -35,14 +45,16 @@ fun ImageScreen(modifier: Modifier = Modifier, routActual: MutableState<String>)
         // le pasamos directamente weight(1f) y nos ahorramos el Box.
         MainScreen(
             modifier = Modifier.weight(1f),
-            pahtActual = routActual
+            pahtActual = routActual,
+            viewModel.listImages,
+            viewModel = viewModel
         )
 
         Spacer(modifier = Modifier.height(16.dp))
 
         // FOOTER
         FooterScreen(
-            click = {}
+            viewModel = viewModel,
         )
     }
 }

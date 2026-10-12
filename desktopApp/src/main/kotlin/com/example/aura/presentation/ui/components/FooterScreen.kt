@@ -22,11 +22,14 @@ import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.aura.presentation.utils.openFilePicker
+import com.example.aura.presentation.viewmodels.MediaViewModel
+import java.io.File
 
 @Composable
 fun FooterScreen(
     modifier: Modifier = Modifier, // 1. Recibimos el modifier desde el padre
-    click: () -> Unit,
+    viewModel: MediaViewModel,
 ) {
     Row(
         modifier = modifier
@@ -46,7 +49,7 @@ fun FooterScreen(
                 .clip(CircleShape) // El clip siempre antes del background y clickable
                 .background(Color(0xFF333333))
                 .pointerHoverIcon(PointerIcon.Hand)
-                .clickable { click() },
+                .clickable {  },
             contentAlignment = Alignment.Center
         ) {
             Text(
