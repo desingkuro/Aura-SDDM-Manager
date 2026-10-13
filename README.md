@@ -1,135 +1,130 @@
-# Proyecto: Aura SDDM Manager
+# Aura SDDM Manager
 
-**Aura SDDM Manager** (o simplemente *Aura*) es una aplicación de escritorio multiplataforma (enfocada en Linux) construida con Kotlin y Compose Multiplatform. Su objetivo es proporcionar una interfaz gráfica moderna, intuitiva y segura para gestionar, personalizar y previsualizar temas de SDDM (Simple Desktop Display Manager), con un enfoque especial en temas avanzados como *SilentSDDM*.
+Aura es una aplicación de escritorio construida con **Kotlin** y **Compose Multiplatform** para gestionar fondos de pantalla de **SDDM** en Linux. Actualmente se encuentra en desarrollo activo sobre la rama `dev`.
 
-## 1. Requerimientos del Sistema
+## Estado actual
 
-### Funcionales
+La aplicación ya cuenta con una base funcional para:
 
-* **Gestión de Fondos de Pantalla:** Permitir al usuario seleccionar archivos locales (`.jpg`, `.png`) y aplicarlos como fondo del tema.
+- Importar imágenes desde el sistema.
+- Importar videos y generar una miniatura con `ffmpeg` cuando está disponible.
+- Mostrar una galería de fondos importados.
+- Seleccionar un fondo y ver una previsualización.
+- Mostrar errores de importación mediante un diálogo visual.
+- Navegar entre secciones desde una barra lateral.
 
-* **Soporte de Fondos Animados:** Permitir la selección de archivos de video (`.mp4`, `.mkv`) si el tema lo soporta, actualizando la configuración de SDDM en consecuencia.
+## Tecnologías principales
 
-* **Gestión de Fuentes:** Listar fuentes instaladas en el sistema del usuario y permitir inyectarlas en el tema SDDM.
+- Kotlin
+- Compose Multiplatform Desktop
+- Gradle Kotlin DSL
+- Clean Architecture básica (`presentation`, `domain`, `data`)
+- `ProcessBuilder` / `ffmpeg` para generación de miniaturas de video
 
-* **Previsualización en Vivo:** Integrar un botón que ejecute `sddm-greeter --test-mode` para que el usuario pueda ver los cambios antes de reiniciar su PC.
+## Requisitos
 
-* **Gestión de Privilegios Segura:** El aplicativo no debe ejecutarse como `root`. Debe solicitar la contraseña del usuario (vía Polkit/`pkexec`) únicamente en el instante de escribir en `/usr/share/sddm/` o `/etc/sddm.conf`.
+- JDK 17 o superior
+- Gradle Wrapper incluido en el repositorio (`./gradlew`)
+- Linux con escritorio compatible si se desea aplicar cambios en SDDM
+- `ffmpeg` instalado para generar miniaturas de videos
 
-* **Compatibilidad Multi-distro:** No debe depender de gestores de paquetes específicos (apt, pacman). Debe utilizar comandos universales de bash y utilidades estándar de Linux.
+Para comprobar `ffmpeg`:
 
-### No Funcionales
-
-* **Arquitectura:** Seguir los principios de Clean Architecture (Presentation, Domain, Data).
-
-* **UI/UX:** Interfaz minimalista inspirada en Material Design 3 / Libadwaita usando Jetpack Compose.
-
-* **Rendimiento:** Las operaciones de I/O y ejecución de comandos bash deben ser asíncronas para no bloquear el hilo de la interfaz de usuario.
-
-## 2. Tecnologías y Librerías (Tech Stack)
-
-### Core
-
-* **Lenguaje:** Kotlin.
-
-* **Framework UI:** Compose Multiplatform (Desktop).
-
-* **Build System:** Gradle (Kotlin DSL).
-
-### Librerías Recomendadas
-
-* **Coroutines (`org.jetbrains.kotlinx:kotlinx-coroutines-core`):** Para manejar la ejecución de los comandos Bash y lectura de archivos en hilos de fondo.
-
-* **Koin (`io.insert-koin:koin-core`):** Para la Inyección de Dependencias (DI). Es muy ligero y perfecto para proyectos Kotlin Desktop.
-
-* **Napier o SLF4J:** Para tener un sistema de *logging* decente y registrar cuándo falla un comando del sistema.
-
-* **`java.lang.ProcessBuilder` (Nativo):** No necesitas una librería externa para ejecutar bash; usarás la API estándar de Java/Kotlin para lanzar comandos como `pkexec cp ...`.
-
-* *(Opcional)* **Config4k o un parser de INI:** Para leer y modificar fácilmente los archivos `theme.conf` de SDDM sin usar expresiones regulares complejas.
-
-## 3. Estructura de Directorios (Clean Architecture)
-
-El código fuente (`src/jvmMain/kotlin/`) debe dividirse en capas claras para que el proyecto sea modular y fácil de probar:
-
-```
-com.kurodev.aura
-│
-├── 📁 di                 # Módulos de Inyección de Dependencias (Koin)
-│
-├── 📁 presentation       # Capa de Interfaz Gráfica (Compose)
-│   ├── 📁 ui
-│   │   ├── 📁 screens    # Pantallas principales (MainScreen, SettingsScreen)
-│   │   ├── 📁 components # Componentes reutilizables (Botones, Tarjetas, FilePicker)
-│   │   └── 📁 theme      # Colores, Tipografía de Compose
-│   └── 📁 viewmodels     # Manejo de estado de la UI (MVI o MVVM)
-│
-├── 📁 domain             # Capa de Lógica de Negocio (Pura, sin dependencias de framework)
-│   ├── 📁 models         # Clases de datos (Ej. ThemeConfig, BackgroundType)
-│   ├── 📁 repository     # Interfaces de los repositorios (Ej. ISddmRepository)
-│   └── 📁 usecases       # Casos de uso específicos:
-│       ├── ApplyBackgroundUseCase.kt
-│       ├── PreviewThemeUseCase.kt
-│       └── LoadThemeConfigUseCase.kt
-│
-└── 📁 data               # Capa de Datos y Sistema
-    ├── 📁 repository     # Implementación real de ISddmRepository
-    └── 📁 system         # Clases que interactúan directamente con Linux
-        ├── CommandExecutor.kt  # Wrapper para ProcessBuilder (maneja pkexec)
-        └── ConfigManager.kt    # Lee/Escribe los archivos .conf
-
+```bash
+ffmpeg -version
 ```
 
-## 4. Estrategia de Ejecución de Comandos (El "Secreto" del App)
+## Cómo ejecutar
 
-Para mantener la aplicación segura y compatible con cualquier distro (Debian, Arch, Fedora), **nunca debes ejecutar la app entera como sudo**.
+Ejecutar la aplicación desktop:
 
-La capa `CommandExecutor.kt` usará `pkexec` (Polkit). Un ejemplo del flujo interno será:
+```bash
+./gradlew :desktopApp:run
+```
 
-1. El usuario escoge una imagen en la UI (ruta: `/home/user/imagen.jpg`).
+Ejecutar con recarga en caliente:
 
-2. El ViewModel llama al UseCase `ApplyBackgroundUseCase`.
+```bash
+./gradlew :desktopApp:hotRun --auto
+```
 
-3. El Repositorio invoca al Executor construyendo este comando nativo:
-   `pkexec bash -c "cp /home/user/imagen.jpg /usr/share/sddm/themes/silent/backgrounds/ && sed -i 's/Background=.*/Background=imagen.jpg/' /usr/share/sddm/themes/silent/theme.conf"`
+Compilar el módulo principal:
 
-4. Polkit levantará automáticamente la ventana nativa del sistema operativo pidiendo la contraseña al usuario.
+```bash
+./gradlew :desktopApp:compileKotlin
+```
 
-## 5. Siguientes Pasos
+Ejecutar pruebas compartidas:
 
-1. **Inicializar el proyecto:** Crear un proyecto de Compose Multiplatform Desktop usando IntelliJ IDEA o la plantilla oficial de JetBrains.
+```bash
+./gradlew :shared:jvmTest
+```
 
-2. **Crear el `CommandExecutor`:** Antes de hacer UI, programar la clase que lanza procesos bash y probar que `pkexec` funciona correctamente desde Kotlin.
+## Estructura principal del proyecto
 
-3. **Diseñar la UI:** Crear la vista principal con botones para seleccionar fondos y probar la previsualización.
+```text
+Aura/
+├── desktopApp/
+│   └── src/main/kotlin/com/example/aura/
+│       ├── data/                 # Implementaciones de almacenamiento y acceso local
+│       ├── domain/               # Modelos e interfaces de repositorio
+│       └── presentation/         # UI Compose, navegación, utilidades y viewmodels
+├── shared/                       # Código compartido de Kotlin Multiplatform
+└── gradle/                       # Configuración de dependencias y wrapper
+```
 
+## Arquitectura actual
 
-This is a Kotlin Multiplatform project targeting Desktop (JVM).
+### Presentation
 
-* [/shared](./shared/src) is for code that will be shared across your Compose Multiplatform applications.
-  It contains several subfolders:
-    - [commonMain](./shared/src/commonMain/kotlin) is for code that’s common for all targets.
-    - Other folders are for Kotlin code that will be compiled for only the platform indicated in the folder name.
-      For example, if you want to use Apple’s CoreCrypto for the iOS part of your Kotlin app,
-      the [iosMain](./shared/src/iosMain/kotlin) folder would be the right place for such calls.
-      Similarly, if you want to edit the Desktop (JVM) specific part, the [jvmMain](./shared/src/jvmMain/kotlin)
-      folder is the appropriate location.
+Contiene la interfaz de usuario, navegación, componentes visuales, utilidades de archivos y viewmodels.
 
-### Running the apps
+- `App`: punto de composición principal.
+- `ImageScreen` / `VideoScreeen`: pantallas para fondos estáticos y animados.
+- `components/`: sidebar, tarjetas, header, footer, diálogos y panel principal.
+- `viewmodels/`: estados de imágenes, videos, selección y errores.
+- `utils/`: selector de archivos y conversión a `ImageBitmap`.
 
-Use the run configurations provided by the run widget in your IDE's toolbar. You can also use these commands and
-options:
+### Domain
 
-- Desktop app:
-    - Hot reload: `./gradlew :desktopApp:hotRun --auto`
-    - Standard run: `./gradlew :desktopApp:run`
+Contiene contratos y modelos independientes de la UI.
 
-### Running tests
+- `MediaRepository`: contrato para leer e importar archivos multimedia.
+- `models/`: modelos base de la aplicación.
 
-Use the run button in your IDE's editor gutter, or run tests using Gradle tasks:
+### Data
 
-- Desktop tests: `./gradlew :shared:jvmTest`
+Contiene la implementación del repositorio y utilidades de almacenamiento local.
 
----
+- `MediaRepositoryImple`: filtra imágenes/videos y copia archivos al almacenamiento local.
+- `StorageManager`: crea/usa el directorio local de medios.
 
-Learn more about [Kotlin Multiplatform](https://www.jetbrains.com/help/kotlin-multiplatform-dev/get-started.html)…
+## Consideraciones actuales
+
+- Las imágenes se cargan directamente desde archivos locales.
+- Los videos se representan mediante una miniatura extraída con `ffmpeg`.
+- La acción de aplicar cambios a SDDM aún está pendiente.
+- La integración con `pkexec`/Polkit y edición de configuración SDDM sigue en planeación.
+
+## Próximos pasos
+
+1. Implementar la acción real de `Aplicar` para escribir configuración de SDDM.
+2. Añadir previsualización del tema con `sddm-greeter --test-mode`.
+3. Mejorar la gestión de errores y permisos.
+4. Separar mejor las pantallas y estados por tipo de medio.
+5. Añadir pruebas para repositorio, selección e importación.
+
+## Flujo de desarrollo
+
+La rama principal de trabajo es `dev`.
+
+Se recomienda:
+
+1. Crear cambios pequeños y verificables.
+2. Compilar con `./gradlew :desktopApp:compileKotlin`.
+3. Crear commits descriptivos por funcionalidad o mejora visual.
+4. Subir los cambios cuando la rama esté estable:
+
+```bash
+git push origin dev
+```
