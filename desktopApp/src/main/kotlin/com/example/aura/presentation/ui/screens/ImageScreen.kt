@@ -35,7 +35,8 @@ fun ImageScreen(modifier: Modifier = Modifier, routActual: MutableState<String>)
     ) {
         // HEADER
         HeaderScreen(
-            title = "Personalización de fondo de imagen"
+            title = "Personalización de fondo de imagen",
+            subtitle = "Importa, selecciona y previsualiza el fondo estático para tu pantalla de inicio."
         )
 
         Spacer(modifier = Modifier.height(16.dp))

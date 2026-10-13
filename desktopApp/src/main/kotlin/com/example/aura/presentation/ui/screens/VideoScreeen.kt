@@ -35,7 +35,8 @@ fun VideoScreeen(modifier: Modifier = Modifier, routActual: MutableState<String>
     ) {
         // HEADER
         HeaderScreen(
-            title = "Personalización de fondo animado"
+            title = "Personalización de fondo animado",
+            subtitle = "Gestiona videos de fondo y revisa su miniatura antes de aplicarlos."
         )
 
         Spacer(modifier = Modifier.height(16.dp))

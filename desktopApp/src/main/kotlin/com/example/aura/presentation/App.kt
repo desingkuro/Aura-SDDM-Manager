@@ -13,11 +13,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.tooling.preview.Preview
 import com.example.aura.presentation.ui.components.Sidebar
 import com.example.aura.presentation.ui.screens.ImageScreen
 import com.example.aura.presentation.ui.screens.VideoScreeen
+import com.example.aura.presentation.ui.theme.AuraColors
 
 @Composable
 @Preview
@@ -26,19 +26,20 @@ fun App() {
     MaterialTheme {
         Row(
             modifier = Modifier
-                .background(Color(0xFF131313))
+                .background(AuraColors.Background)
                 .safeContentPadding()
                 .fillMaxSize(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             // Le damos el 25% del ancho de la pantalla al Sidebar
             Sidebar(
-                modifier = Modifier.weight(0.2f),
+                modifier = Modifier.weight(0.22f),
+                currentRoute = routActual.value,
                 onNavigate = {
                     routActual.value = it
                 }
             )
-            Box(modifier = Modifier.fillMaxWidth(.8f).fillMaxHeight()) {
+            Box(modifier = Modifier.fillMaxWidth(.78f).fillMaxHeight()) {
                 when (routActual.value) {
                     "image" -> ImageScreen(modifier = Modifier,routActual)
                     "video" -> VideoScreeen(modifier = Modifier,routActual)

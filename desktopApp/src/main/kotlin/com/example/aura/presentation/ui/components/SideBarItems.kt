@@ -30,7 +30,7 @@ import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import org.jetbrains.compose.resources.DrawableResource
+import com.example.aura.presentation.ui.theme.AuraColors
 
 @Composable
 fun ItemSideBar(
@@ -49,14 +49,18 @@ fun ItemSideBar(
 
     // Animación suave del fondo
     val backgroundColor by animateColorAsState(
-        targetValue = if (isActive) Color(0xFF2C2C2E) else Color.Transparent,
+        targetValue = when {
+            isSelected -> AuraColors.PrimaryMuted.copy(alpha = 0.35f)
+            isHover -> AuraColors.SurfaceVariant
+            else -> Color.Transparent
+        },
         animationSpec = tween(durationMillis = 200),
         label = "hover_background"
     )
 
     // Animación del color de los elementos (ícono y texto)
     val contentColor by animateColorAsState(
-        targetValue = if (isActive) Color.White else Color(0xFFA0A0A5),
+        targetValue = if (isActive) AuraColors.TextPrimary else AuraColors.TextSecondary,
         animationSpec = tween(durationMillis = 200),
         label = "hover_content"
     )

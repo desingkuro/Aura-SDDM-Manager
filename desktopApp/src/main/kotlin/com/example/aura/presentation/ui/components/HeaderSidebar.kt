@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import aura.desktopapp.generated.resources.Res
 import aura.desktopapp.generated.resources.logo
+import com.example.aura.presentation.ui.theme.AuraColors
 import org.jetbrains.compose.resources.painterResource
 
 @Composable
@@ -54,7 +55,7 @@ fun HeaderSidebar() {
             )
         }
         Text("Aura SDDM Manager",
-            color = Color.White,
+            color = AuraColors.TextPrimary,
             fontSize = 18.sp,
             textAlign = TextAlign.Center,
             fontWeight = FontWeight.Bold,
