@@ -43,13 +43,7 @@ fun MainScreen(
 ) {
 
     val scrollState = rememberScrollState()
-    var textButtom: String = ""
-    if (pahtActual.value == "image") {
-        textButtom = "imagen"
-    }
-    if (pahtActual.value == "video") {
-        textButtom = "video"
-    }
+
     Row(
         modifier = modifier
             .fillMaxSize() // 2. Cambiamos fillMaxHeight(0.9f) por fillMaxSize()
@@ -80,7 +74,11 @@ fun MainScreen(
                         verticalArrangement = Arrangement.spacedBy(20.dp),
                     ){
                         listFiles.forEach { file ->
-                            CardMultimedia()
+                            CardMultimedia(
+                                file = file,
+                                type = if (pahtActual.value == "video") "video" else "image",
+                                onSelected = {viewModel.selectFile(file,pahtActual.value) },
+                            )
                         }
                     }
                     VerticalScrollbar(
@@ -128,7 +126,7 @@ fun MainScreen(
                 )
                 Spacer(modifier = Modifier.width(16.dp))
                 Text(
-                    text = "Importar $textButtom",
+                    text = "Importar ${pahtActual.value}",
                     color = Color.White,
                     fontSize = 18.sp,
                     fontWeight = FontWeight.SemiBold
@@ -178,4 +176,11 @@ fun MainScreen(
             }
         }
     }
+
+    CustomAlertDialog(
+        showDialog = viewModel.errorMessage != null,
+        title = "Error al importar",
+        message = viewModel.errorMessage.orEmpty(),
+        onDismiss = { viewModel.clearError() }
+    )
 }

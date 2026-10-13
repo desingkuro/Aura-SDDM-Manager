@@ -15,6 +15,15 @@ class MediaViewModel(
     var listVideo by mutableStateOf<List<File>>(emptyList())
         private set
 
+    var errorMessage by mutableStateOf<String?>(null)
+        private set
+
+    var selectedFile by mutableStateOf<File?>(null)
+        private set
+
+    var selectedTypeFile by mutableStateOf<String?>(null)
+        private set
+
     fun loadImages(){
         listImages = mediaRepository.getImageFiles()
         print("loadImages $listImages")
@@ -26,10 +35,24 @@ class MediaViewModel(
     }
 
     fun importNewFile(file: File){
-        mediaRepository.createMediaDirectory(file)
-        loadImages()
-        loadVideos()
+        try {
+            mediaRepository.createMediaDirectory(file)
+            errorMessage = null
+            loadImages()
+            loadVideos()
+        } catch (e: Exception) {
+            val detail = e.message ?: "error desconocido"
+            errorMessage = "No se pudo importar \"${file.name}\". Detalle: $detail"
+        }
     }
 
+    fun clearError() {
+        errorMessage = null
+    }
 
+    fun selectFile(file: File, type: String){
+        print("Selecione o file ${file.name}")
+        selectedFile = file
+        selectedTypeFile = type
+    }
 }
