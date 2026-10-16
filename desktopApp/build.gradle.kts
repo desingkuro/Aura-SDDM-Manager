@@ -19,6 +19,7 @@ dependencies {
 compose.desktop {
     application {
         mainClass = "com.example.aura.MainKt"
+        jvmArgs("--enable-native-access=ALL-UNNAMED")
 
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
