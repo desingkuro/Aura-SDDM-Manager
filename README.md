@@ -115,14 +115,15 @@ Contiene la implementación del repositorio y utilidades de almacenamiento local
 - Las imágenes se cargan directamente desde archivos locales.
 - Los videos se representan mediante una miniatura extraída con `ffmpeg`.
 - La previsualización con `sddm-greeter` busca el ejecutable en rutas comunes de Linux.
-- El nombre del tema para la previsualización está fijado temporalmente a `breeze`; falta obtenerlo desde la configuración real de SDDM.
+- Existe `getCurrentTheme()` para leer el tema actual desde la configuración de SDDM, pero la previsualización todavía usa el tema fijo `breeze`; falta conectarla.
+- La carpeta `sddm.conf.d` aún debe revisarse para leer la ruta correcta en todas las distribuciones.
 - La acción de aplicar cambios directamente sobre SDDM aún está pendiente.
 - La integración con `pkexec`/Polkit y edición de configuración SDDM sigue en planeación.
 - La aplicación desktop usa `--enable-native-access=ALL-UNNAMED` para compatibilidad con acceso nativo en JVM recientes.
 
 ## Próximos pasos
 
-1. Obtener dinámicamente el tema actual de SDDM para la previsualización.
+1. Conectar `getCurrentTheme()` a la previsualización para usar dinámicamente el tema actual de SDDM.
 2. Implementar la acción real de `Aplicar` para escribir configuración de SDDM.
 3. Mejorar la gestión de errores y permisos.
 4. Separar mejor las pantallas y estados por tipo de medio.
