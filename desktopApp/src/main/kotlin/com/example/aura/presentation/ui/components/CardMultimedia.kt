@@ -6,27 +6,22 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import aura.desktopapp.generated.resources.Res
 import aura.desktopapp.generated.resources.compose_multiplatform
+import aura.desktopapp.generated.resources.images_regular_full // Asegúrate de importar tu ícono de imagen
 import aura.desktopapp.generated.resources.video_travel_image_svgrepo_com
 import com.example.aura.presentation.ui.theme.AuraColors
 import com.example.aura.presentation.utils.fileToImageBitmap
@@ -83,17 +78,29 @@ fun CardMultimedia(
             )
         }
 
-        if (type == "video") {
-            Text(
-                text = "VIDEO",
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(8.dp)
-                    .background(AuraColors.Background.copy(alpha = 0.82f), RoundedCornerShape(8.dp))
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
-                color = AuraColors.TextPrimary,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Bold
+        // INDICADOR DE TIPO DE ARCHIVO (Ícono en la esquina inferior derecha)
+        val typeIndicatorIcon = if (type == "video") {
+            Res.drawable.video_travel_image_svgrepo_com // Cambia esto por tu ícono de video específico si lo deseas
+        } else {
+            Res.drawable.images_regular_full // Cambia esto por tu ícono de imagen específico
+        }
+
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomEnd) // Alineado a la parte inferior derecha
+                .padding(8.dp) // Separación desde los bordes de la tarjeta
+                .background(
+                    color = AuraColors.Background.copy(alpha = 0.7f), // Fondo semitransparente oscuro
+                    shape = RoundedCornerShape(8.dp) // Bordes redondeados del contenedor del ícono
+                )
+                .padding(6.dp), // Espacio interno del contenedor para que el ícono respire
+            contentAlignment = Alignment.Center
+        ) {
+            Image(
+                painter = painterResource(typeIndicatorIcon),
+                contentDescription = "Tipo: $type",
+                modifier = Modifier.size(16.dp), // Tamaño pequeño y elegante para el ícono
+                colorFilter = ColorFilter.tint(AuraColors.TextPrimary) // Aplicamos tu color de texto principal
             )
         }
     }

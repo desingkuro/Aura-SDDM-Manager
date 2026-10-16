@@ -25,6 +25,7 @@ fun ImageScreen(modifier: Modifier = Modifier, routActual: MutableState<String>)
     //launchEffect ejecuta una sola vez cuando la pantalla se abre
     LaunchedEffect(Unit){
         viewModel.loadImages()
+        viewModel.loadFileApplied()
     }
 
     Column(

@@ -25,6 +25,7 @@ fun VideoScreeen(modifier: Modifier = Modifier, routActual: MutableState<String>
     //launchEffect ejecuta una sola ves cuando la pantalla se abre
     LaunchedEffect(Unit){
         viewModel.loadVideos()
+        viewModel.loadFileApplied()
     }
 
     Column(

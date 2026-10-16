@@ -15,6 +15,7 @@ import androidx.compose.runtime.MutableState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
@@ -47,6 +48,7 @@ fun MainScreen(
     val emptyIcon = if (isVideo) Res.drawable.video_travel_image_svgrepo_com else Res.drawable.images_regular_full
     val selectedFile = viewModel.selectedFile
     val selectedType = viewModel.selectedTypeFile ?: mediaType
+    val mediaFileApplied = viewModel.fileApplied
 
     Row(
         modifier = modifier
@@ -177,7 +179,7 @@ fun MainScreen(
                     type = selectedType,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(220.dp),
+                        .height(160.dp),
                     isSelected = true,
                     onSelected = {}
                 )
@@ -192,7 +194,7 @@ fun MainScreen(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(220.dp)
+                        .height(160.dp)
                         .background(AuraColors.SurfaceVariant, RoundedCornerShape(14.dp)),
                     contentAlignment = Alignment.Center
                 ) {
@@ -213,8 +215,62 @@ fun MainScreen(
                     }
                 }
             }
+            Text(
+                text = "Fondo Actual",
+                color = AuraColors.TextPrimary,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center
+            )
+            if (mediaFileApplied != null) {
+                val fileApplied = mediaFileApplied.first
+                val typeFileApplied = mediaFileApplied.second
+                CardMultimedia(
+                    file = fileApplied,
+                    type = typeFileApplied,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(220.dp),
+                    isSelected = true,
+                    onSelected = {}
+                )
+                Text(
+                    text = if (viewModel.fileApplied != null) viewModel.fileApplied!!.first.name else "" ,
+                    color = AuraColors.TextSecondary,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                    textAlign = TextAlign.Center
+                )
+            }else
+            {
+                // Estado vacío
+                Image(
+                    painter = painterResource(Res.drawable.add_to_queue_svgrepo_com),
+                    contentDescription = "Previsualización vacía",
+                    modifier = Modifier.size(64.dp),
+                    colorFilter = ColorFilter.tint(Color.DarkGray)
+                )
+            }
         }
     }
+
+    CustomAlertDialog(
+        showDialog = viewModel.viewDialogDeleted,
+        title = "Eliminar archivo",
+        message = "¿Estás seguro de que deseas eliminar '${viewModel.selectedFile?.name}'?\nEsta acción no se puede deshacer.",
+        confirmText = "Sí, eliminar",
+        onDismiss = {
+            // Si hace clic fuera o cancela, solo cerramos el diálogo
+            viewModel.toggleViewDialog()
+        },
+        onConfirm = {
+            // Si confirma, cerramos el diálogo y ejecutamos la acción de borrar
+            viewModel.toggleViewDialog()
+            viewModel.deleteMedia(viewModel.selectedFile)
+            viewModel.loadVideos()
+            viewModel.loadImages()
+        }
+    )
 
     CustomAlertDialog(
         showDialog = viewModel.errorMessage != null,

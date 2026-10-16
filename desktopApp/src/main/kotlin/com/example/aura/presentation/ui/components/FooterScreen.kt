@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -37,6 +38,56 @@ fun FooterScreen(
         horizontalArrangement = Arrangement.End,
         verticalAlignment = Alignment.CenterVertically
     ) {
+
+        //Previsualizar
+        Box(
+            modifier = Modifier
+                .width(132.dp)
+                .height(42.dp)
+                .clip(CircleShape)
+                .background(
+                    if (viewModel.selectedFile != null) AuraColors.PrimaryMuted else AuraColors.SurfaceElevated
+                )
+                .pointerHoverIcon(PointerIcon.Hand)
+                .clickable { },
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = "Previsualizar",
+                fontSize = 15.sp,
+                color = if (viewModel.selectedFile != null) AuraColors.TextPrimary else AuraColors.TextSecondary,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+
+        Spacer(modifier = Modifier.width(20.dp))
+
+        //Eliminar
+        Box(
+            modifier = Modifier
+                .width(132.dp)
+                .height(42.dp)
+                .clip(CircleShape)
+                .background(
+                    if (viewModel.selectedFile != null) AuraColors.Danger else AuraColors.SurfaceElevated
+                )
+                .pointerHoverIcon(PointerIcon.Hand)
+                .clickable {
+                    viewModel.toggleViewDialog()
+                },
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = "Eliminar",
+                fontSize = 15.sp,
+                color = if (viewModel.selectedFile != null) AuraColors.TextPrimary else AuraColors.TextSecondary,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+
+        Spacer(modifier = Modifier.width(20.dp))
+
+        //Aplicar
         Box(
             modifier = Modifier
                 .width(132.dp)

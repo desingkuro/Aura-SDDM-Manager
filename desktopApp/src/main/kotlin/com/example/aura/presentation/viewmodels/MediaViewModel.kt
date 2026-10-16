@@ -24,6 +24,16 @@ class MediaViewModel(
     var selectedTypeFile by mutableStateOf<String?>(null)
         private set
 
+    var fileApplied by mutableStateOf< Pair<File, String>?>(null)
+        private set
+
+    var viewDialogDeleted by mutableStateOf<Boolean>(false)
+        private set
+
+    fun toggleViewDialog() {
+        viewDialogDeleted = !viewDialogDeleted
+    }
+
     fun loadImages(){
         listImages = mediaRepository.getImageFiles()
         print("loadImages $listImages")
@@ -32,6 +42,10 @@ class MediaViewModel(
     fun loadVideos(){
         listVideo = mediaRepository.getVideoFiles()
         print("loadVideo $listVideo")
+    }
+
+    fun loadFileApplied(){
+        fileApplied = mediaRepository.getAppliedbackground()
     }
 
     fun importNewFile(file: File){
@@ -54,5 +68,20 @@ class MediaViewModel(
         print("Selecione o file ${file.name}")
         selectedFile = file
         selectedTypeFile = type
+    }
+
+    fun deleteMedia(file: File?) {
+        if(file == null) return
+        val success = mediaRepository.deletedFile(file)
+        if (success) {
+            // Si se borró del disco, volvemos a cargar la lista de la carpeta.
+            // Esto hará que el archivo desaparezca mágicamente de la pantalla.
+            loadImages()
+
+            // Opcional: Si el archivo borrado era el que estaba seleccionado como "borrador", lo limpiamos
+            if (selectedFile?.absolutePath == file.absolutePath) {
+                selectedFile = null
+            }
+        }
     }
 }
