@@ -179,7 +179,7 @@ fun MainScreen(
                     type = selectedType,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(160.dp),
+                        .height(200.dp),
                     isSelected = true,
                     onSelected = {}
                 )
@@ -194,7 +194,7 @@ fun MainScreen(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(160.dp)
+                        .height(200.dp)
                         .background(AuraColors.SurfaceVariant, RoundedCornerShape(14.dp)),
                     contentAlignment = Alignment.Center
                 ) {
