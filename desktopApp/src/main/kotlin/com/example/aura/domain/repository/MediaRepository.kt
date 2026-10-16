@@ -11,4 +11,5 @@ interface MediaRepository{
     fun saveAppliedbackground(file:File)
 
     fun deletedFile(file:File): Boolean
+    fun getCurrentTheme():String
 }

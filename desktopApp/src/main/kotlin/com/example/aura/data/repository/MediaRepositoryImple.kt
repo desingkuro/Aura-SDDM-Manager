@@ -38,26 +38,7 @@ class MediaRepositoryImple: MediaRepository {
 
     private fun getCurrentSDDMBackground(): Pair<File, String>?{
         try {
-            var currentTheme:String = ""
-            val sddmConfFiles = mutableListOf<File>()
-            val mainConf = File("/stc/sddm.conf")
-            val confFolder = File("/stcsddm.conf.d/")
-
-            if (mainConf.exists()) {sddmConfFiles.add(confFolder)}
-            if (confFolder.exists() && confFolder.isDirectory) {
-                confFolder.listFiles()?.let { sddmConfFiles.addAll(it) }
-            }
-
-            //Recorremos linea por linea de los archivos para poder encontrar la ruta
-            for(file in sddmConfFiles){
-                file.useLines { lines ->
-                    lines.forEach { line ->
-                        if(line.trim().startsWith("Current=")) {
-                            currentTheme = line.split("=")[1].trim()
-                        }
-                    }
-                }
-            }
+            var currentTheme = getCurrentTheme()
 
             if(currentTheme.isEmpty()){
                 currentTheme = "breeze"
@@ -94,6 +75,37 @@ class MediaRepositoryImple: MediaRepository {
             println("Error leyendo el archivo de configuracion ${e.message}")
         }
         return null
+    }
+
+     override fun getCurrentTheme(): String {
+         var currentTheme:String = ""
+         try {
+             val sddmConfFiles = mutableListOf<File>()
+             val mainConf = File("/etc/sddm.conf")
+             val confFolder = File("/stcsddm.conf.d/")
+
+             if (mainConf.exists()) {sddmConfFiles.add(confFolder)}
+             if (confFolder.exists() && confFolder.isDirectory) {
+                 confFolder.listFiles()?.let { sddmConfFiles.addAll(it) }
+             }
+
+             //Recorremos linea por linea de los archivos para poder encontrar la ruta
+             for(file in sddmConfFiles){
+                 file.useLines { lines ->
+                     lines.forEach { line ->
+                         if(line.trim().startsWith("Current=")) {
+                             print("Linea por linea del current $line")
+                             currentTheme = line.split("=")[1].trim()
+                         }
+                     }
+                 }
+             }
+             println("currentTheme = $currentTheme")
+         }catch (e:Exception){
+             println("Error al leer la configuración de SDDM: ${e.message}")
+         }finally {
+             return currentTheme
+         }
     }
 
     override fun saveAppliedbackground(file: File) {
