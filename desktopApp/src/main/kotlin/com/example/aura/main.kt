@@ -8,6 +8,8 @@ fun main() = application {
     Window(
         onCloseRequest = ::exitApplication,
         title = "Aura",
+        resizable = true,
+        undecorated = false,
     ) {
         App()
     }
