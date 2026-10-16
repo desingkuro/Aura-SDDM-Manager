@@ -6,6 +6,7 @@ import com.example.aura.domain.repository.MediaRepository
 import java.io.File
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import kotlin.concurrent.thread
 
 class MediaViewModel(
     private val mediaRepository: MediaRepository = MediaRepositoryImple()
@@ -81,6 +82,52 @@ class MediaViewModel(
             // Opcional: Si el archivo borrado era el que estaba seleccionado como "borrador", lo limpiamos
             if (selectedFile?.absolutePath == file.absolutePath) {
                 selectedFile = null
+            }
+        }
+    }
+
+    fun getPahtSddm(): String?{
+        val possiblePaths = listOf(
+            "/usr/bin/sddm-greeter-qt6",     // Tu ruta exacta en PikaOS
+            "/usr/bin/sddm-greeter",         // Clásico
+            "/usr/libexec/sddm-greeter-qt6",
+            "/usr/libexec/sddm-greeter",
+            "/usr/lib/sddm/sddm-greeter",
+            "/usr/lib/x86_64-linux-gnu/sddm/sddm-greeter"
+        )
+        val executablePaht = possiblePaths.find { java.io.File(it).exists() }
+        return executablePaht
+    }
+
+    fun getCurrentThemeSddm(): String{
+        return mediaRepository.getCurrentTheme()
+    }
+
+    fun launchSddmPreview(){
+        thread {
+            try {
+                val paht = getPahtSddm()
+                if(paht != null){
+                    // Tumchya active theme cha path ithe taka (udaharanarth "breeze", "maldives", kiva ji theme tumhi vapartay)
+                    val currentThemeName = getCurrentThemeSddm()
+                    val themePath = "/usr/share/sddm/themes/$currentThemeName"
+
+                    println("Lanzando previsualización con tema: $themePath")
+                    println("Ejecutando SDDM Greeter desde: $paht")
+                    //Ejecutamos el codigo nativo del sddm
+                    val process = ProcessBuilder(paht, "--test-mode", "--theme", themePath)
+                        .inheritIO().start()
+                    //esperar a que el usuario cierre la ventana
+                    process.waitFor()
+                }else {
+                    // Si no existe en ninguna parte (el usuario no tiene SDDM instalado)
+                    println("Error: No se encontró sddm-greeter en el sistema.")
+                    // Opcional: Aquí podrías cambiar una variable para mostrar un CustomAlertDialog
+                }
+            }
+            catch (e: Exception){
+                println("Error al intentar abrir el preview de SDDM: ${e.message}")
+                e.printStackTrace()
             }
         }
     }

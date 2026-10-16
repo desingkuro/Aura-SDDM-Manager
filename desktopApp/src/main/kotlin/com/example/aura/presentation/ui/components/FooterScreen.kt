@@ -49,7 +49,7 @@ fun FooterScreen(
                     if (viewModel.selectedFile != null) AuraColors.PrimaryMuted else AuraColors.SurfaceElevated
                 )
                 .pointerHoverIcon(PointerIcon.Hand)
-                .clickable { },
+                .clickable { viewModel.launchSddmPreview() },
             contentAlignment = Alignment.Center
         ) {
             Text(
