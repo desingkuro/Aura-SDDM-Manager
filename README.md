@@ -9,7 +9,10 @@ La aplicación ya cuenta con una base funcional para:
 - Importar imágenes desde el sistema.
 - Importar videos y generar una miniatura con `ffmpeg` cuando está disponible.
 - Mostrar una galería de fondos importados.
-- Seleccionar un fondo y ver una previsualización.
+- Seleccionar un fondo y ver una previsualización dentro de la aplicación.
+- Eliminar fondos importados con diálogo de confirmación.
+- Detectar y mostrar el fondo actualmente aplicado.
+- Lanzar una previsualización del tema con `sddm-greeter --test-mode` cuando está disponible.
 - Mostrar errores de importación mediante un diálogo visual.
 - Navegar entre secciones desde una barra lateral.
 
@@ -20,6 +23,7 @@ La aplicación ya cuenta con una base funcional para:
 - Gradle Kotlin DSL
 - Clean Architecture básica (`presentation`, `domain`, `data`)
 - `ProcessBuilder` / `ffmpeg` para generación de miniaturas de video
+- `ProcessBuilder` / `sddm-greeter` para previsualización de temas SDDM
 
 ## Requisitos
 
@@ -27,11 +31,18 @@ La aplicación ya cuenta con una base funcional para:
 - Gradle Wrapper incluido en el repositorio (`./gradlew`)
 - Linux con escritorio compatible si se desea aplicar cambios en SDDM
 - `ffmpeg` instalado para generar miniaturas de videos
+- `sddm-greeter` instalado si se desea previsualizar el tema localmente
 
 Para comprobar `ffmpeg`:
 
 ```bash
 ffmpeg -version
+```
+
+Para comprobar `sddm-greeter`:
+
+```bash
+command -v sddm-greeter sddm-greeter-qt6
 ```
 
 ## Cómo ejecutar
@@ -82,7 +93,7 @@ Contiene la interfaz de usuario, navegación, componentes visuales, utilidades d
 - `App`: punto de composición principal.
 - `ImageScreen` / `VideoScreeen`: pantallas para fondos estáticos y animados.
 - `components/`: sidebar, tarjetas, header, footer, diálogos y panel principal.
-- `viewmodels/`: estados de imágenes, videos, selección y errores.
+- `viewmodels/`: estados de imágenes, videos, selección, fondo aplicado, errores y previsualización SDDM.
 - `utils/`: selector de archivos y conversión a `ImageBitmap`.
 
 ### Domain
@@ -103,16 +114,20 @@ Contiene la implementación del repositorio y utilidades de almacenamiento local
 
 - Las imágenes se cargan directamente desde archivos locales.
 - Los videos se representan mediante una miniatura extraída con `ffmpeg`.
-- La acción de aplicar cambios a SDDM aún está pendiente.
+- La previsualización con `sddm-greeter` busca el ejecutable en rutas comunes de Linux.
+- El nombre del tema para la previsualización está fijado temporalmente a `breeze`; falta obtenerlo desde la configuración real de SDDM.
+- La acción de aplicar cambios directamente sobre SDDM aún está pendiente.
 - La integración con `pkexec`/Polkit y edición de configuración SDDM sigue en planeación.
+- La aplicación desktop usa `--enable-native-access=ALL-UNNAMED` para compatibilidad con acceso nativo en JVM recientes.
 
 ## Próximos pasos
 
-1. Implementar la acción real de `Aplicar` para escribir configuración de SDDM.
-2. Añadir previsualización del tema con `sddm-greeter --test-mode`.
+1. Obtener dinámicamente el tema actual de SDDM para la previsualización.
+2. Implementar la acción real de `Aplicar` para escribir configuración de SDDM.
 3. Mejorar la gestión de errores y permisos.
 4. Separar mejor las pantallas y estados por tipo de medio.
 5. Añadir pruebas para repositorio, selección e importación.
+6. Mostrar en la UI un error claro cuando `sddm-greeter` no esté instalado.
 
 ## Flujo de desarrollo
 
