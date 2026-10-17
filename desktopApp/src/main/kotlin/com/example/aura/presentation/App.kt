@@ -16,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import com.example.aura.presentation.ui.components.Sidebar
 import com.example.aura.presentation.ui.screens.ImageScreen
+import com.example.aura.presentation.ui.screens.SettingsScreen
 import com.example.aura.presentation.ui.screens.VideoScreeen
 import com.example.aura.presentation.ui.theme.AuraColors
 
@@ -43,7 +44,7 @@ fun App() {
                 when (routActual.value) {
                     "image" -> ImageScreen(modifier = Modifier,routActual)
                     "video" -> VideoScreeen(modifier = Modifier,routActual)
-                    "ajustes_avanzados" -> ImageScreen(modifier = Modifier,routActual)
+                    "ajustes_avanzados" -> SettingsScreen(modifier = Modifier)
                     else -> ImageScreen(modifier = Modifier,routActual)
                 }
             }

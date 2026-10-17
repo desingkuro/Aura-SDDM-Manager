@@ -26,6 +26,6 @@ val menuItems = listOf(
     NavigationItem(
         "Ajustes Avanzados",
         Res.drawable.setting_svgrepo_com,
-        path = "setting"
+        path = "ajustes_avanzados"
     )
 )
