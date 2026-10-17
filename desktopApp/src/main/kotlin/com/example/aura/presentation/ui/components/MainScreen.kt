@@ -15,13 +15,13 @@ import androidx.compose.runtime.MutableState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import aura.desktopapp.generated.resources.Res
@@ -31,6 +31,7 @@ import aura.desktopapp.generated.resources.video_travel_image_svgrepo_com
 import com.example.aura.presentation.ui.theme.AuraColors
 import com.example.aura.presentation.utils.openFilePicker
 import com.example.aura.presentation.viewmodels.MediaViewModel
+import org.jetbrains.compose.resources.DrawableResource
 import org.jetbrains.compose.resources.painterResource
 import java.io.File
 
@@ -162,94 +163,70 @@ fun MainScreen(
                 .fillMaxHeight()
                 .background(AuraColors.Surface, RoundedCornerShape(16.dp))
                 .padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            Text(
-                text = "Fondo seleccionado",
-                color = AuraColors.TextPrimary,
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Center
-            )
+            // FONDO SELECCIONADO
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                RightPanelTitle("Fondo seleccionado")
 
-            if (selectedFile != null) {
-                CardMultimedia(
-                    file = selectedFile,
-                    type = selectedType,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(200.dp),
-                    isSelected = true,
-                    onSelected = {}
-                )
-                Text(
-                    text = selectedFile.name,
-                    color = AuraColors.TextSecondary,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Medium,
-                    textAlign = TextAlign.Center
-                )
-            } else {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(200.dp)
-                        .background(AuraColors.SurfaceVariant, RoundedCornerShape(14.dp)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Image(
-                            painter = painterResource(emptyIcon),
-                            contentDescription = "Previsualización vacía",
-                            modifier = Modifier.size(56.dp),
-                            colorFilter = ColorFilter.tint(AuraColors.TextMuted)
-                        )
-                        Spacer(modifier = Modifier.height(10.dp))
-                        Text(
-                            text = "Selecciona un archivo para verlo aquí",
-                            color = AuraColors.TextMuted,
-                            fontSize = 13.sp,
-                            textAlign = TextAlign.Center
-                        )
-                    }
+                if (selectedFile != null) {
+                    CardMultimedia(
+                        file = selectedFile,
+                        type = selectedType,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        isSelected = true,
+                        onSelected = {}
+                    )
+                    FileNameLabel(selectedFile.name)
+                } else {
+                    EmptyPreviewBox(
+                        icon = emptyIcon,
+                        message = "Selecciona un archivo para verlo aquí",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                    )
                 }
             }
-            Text(
-                text = "Fondo Actual",
-                color = AuraColors.TextPrimary,
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Center
-            )
-            if (mediaFileApplied != null) {
-                val fileApplied = mediaFileApplied.first
-                val typeFileApplied = mediaFileApplied.second
-                CardMultimedia(
-                    file = fileApplied,
-                    type = typeFileApplied,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(220.dp),
-                    isSelected = true,
-                    onSelected = {}
-                )
-                Text(
-                    text = if (viewModel.fileApplied != null) viewModel.fileApplied!!.first.name else "" ,
-                    color = AuraColors.TextSecondary,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Medium,
-                    textAlign = TextAlign.Center
-                )
-            }else
-            {
-                // Estado vacío
-                Image(
-                    painter = painterResource(Res.drawable.add_to_queue_svgrepo_com),
-                    contentDescription = "Previsualización vacía",
-                    modifier = Modifier.size(64.dp),
-                    colorFilter = ColorFilter.tint(Color.DarkGray)
-                )
+
+            // FONDO ACTUAL
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                RightPanelTitle("Fondo Actual")
+
+                if (mediaFileApplied != null) {
+                    CardMultimedia(
+                        file = mediaFileApplied.first,
+                        type = mediaFileApplied.second,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        isSelected = true,
+                        onSelected = {}
+                    )
+                    FileNameLabel(mediaFileApplied.first.name)
+                } else {
+                    EmptyPreviewBox(
+                        icon = Res.drawable.add_to_queue_svgrepo_com,
+                        message = "Sin fondo detectado",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                    )
+                }
             }
         }
     }
@@ -278,4 +255,65 @@ fun MainScreen(
         message = viewModel.errorMessage.orEmpty(),
         onDismiss = { viewModel.clearError() }
     )
+}
+
+@Composable
+private fun RightPanelTitle(text: String) {
+    Text(
+        text = text,
+        modifier = Modifier.fillMaxWidth(),
+        color = AuraColors.TextPrimary,
+        fontSize = 17.sp,
+        fontWeight = FontWeight.Bold,
+        textAlign = TextAlign.Center,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis
+    )
+}
+
+@Composable
+private fun FileNameLabel(name: String) {
+    Text(
+        text = name,
+        modifier = Modifier.fillMaxWidth(),
+        color = AuraColors.TextSecondary,
+        fontSize = 12.sp,
+        fontWeight = FontWeight.Medium,
+        textAlign = TextAlign.Center,
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis
+    )
+}
+
+@Composable
+private fun EmptyPreviewBox(
+    icon: DrawableResource,
+    message: String,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier.background(AuraColors.SurfaceVariant, RoundedCornerShape(14.dp)),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Image(
+                painter = painterResource(icon),
+                contentDescription = message,
+                modifier = Modifier.size(44.dp),
+                colorFilter = ColorFilter.tint(AuraColors.TextMuted)
+            )
+            Text(
+                text = message,
+                modifier = Modifier.padding(horizontal = 8.dp),
+                color = AuraColors.TextMuted,
+                fontSize = 12.sp,
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
 }
