@@ -123,7 +123,7 @@ Contiene las implementaciones de repositorio y utilidades de almacenamiento loca
 - Para SilentSDDM, el fondo se obtiene desde `metadata.desktop` → `ConfigFile=` → `configs/*.conf`, leyendo `[LoginScreen] background` o `[LockScreen] background` y resolviendo rutas relativas contra `backgrounds/`.
 - La acción de aplicar cambios directamente sobre SDDM aún está pendiente.
 - La integración con `pkexec`/Polkit y edición de configuración SDDM sigue en planeación.
-- La aplicación desktop usa `--enable-native-access=ALL-UNNAMED` para compatibilidad con acceso nativo en JVM recientes.
+- La aplicación desktop usa `--enable-native-access=ALL-UNNAMED` para compatibilidad con acceso nativo (Skiko/FFmpeg) en JVM recientes; se aplica tanto a las tareas `run`/distribuciones como a las de Compose Hot Reload (`hotRun`/`hotDev`).
 
 ## Próximos pasos
 
