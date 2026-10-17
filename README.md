@@ -117,6 +117,7 @@ Contiene las implementaciones de repositorio y utilidades de almacenamiento loca
 - Las imágenes se cargan directamente desde archivos locales.
 - Los videos se representan mediante una miniatura extraída con `ffmpeg`.
 - La previsualización con `sddm-greeter` busca el ejecutable en rutas comunes de Linux.
+- La previsualización construye un **tema temporal** en `/tmp`: enlaza el tema actual, copia el fondo seleccionado en `backgrounds/` y reescribe la configuración para que las pantallas de login y bloqueo usen ese fondo. Al cerrar la ventana del greeter, el tema temporal se elimina automáticamente.
 - El tema actual se lee desde `/etc/sddm.conf` y, si existe, desde `/etc/sddm.conf.d` en orden alfabético.
 - Para temas tradicionales, el fondo se obtiene desde `theme.conf` (`[General] background`).
 - Para SilentSDDM, el fondo se obtiene desde `metadata.desktop` → `ConfigFile=` → `configs/*.conf`, leyendo `[LoginScreen] background` o `[LockScreen] background` y resolviendo rutas relativas contra `backgrounds/`.
