@@ -7,7 +7,7 @@ import java.io.File
 class MediaRepositoryImple : MediaRepository {
     private val mediaDir = CreateMediaDirectory()
     private val imageExtensions = listOf("jpg", "jpeg", "png", "gif", "bmp", "webp")
-    private val videoExtensions = listOf("mp4", "mkv", "avi", "mov", "wmv", "flv", "webm")
+    private val videoExtensions = listOf("mp4", "mkv", "avi", "mov", "wmv", "flv", "webm", "m4v")
 
     override fun createMediaDirectory(media: File) {
         val destinationFile = File(mediaDir, media.name)

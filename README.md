@@ -13,6 +13,7 @@ La aplicación ya cuenta con una base funcional para:
 - Eliminar fondos importados con diálogo de confirmación.
 - Detectar y mostrar el fondo actualmente aplicado.
 - Lanzar una previsualización del tema con `sddm-greeter --test-mode` cuando está disponible.
+- Aplicar el fondo seleccionado (imagen o video) al tema SDDM, con confirmación y permisos de administrador vía `pkexec` cuando es necesario.
 - Mostrar errores de importación mediante un diálogo visual.
 - Navegar entre secciones desde una barra lateral.
 
@@ -24,6 +25,7 @@ La aplicación ya cuenta con una base funcional para:
 - Clean Architecture básica (`presentation`, `domain`, `data`)
 - `ProcessBuilder` / `ffmpeg` para generación de miniaturas de video
 - `ProcessBuilder` / `sddm-greeter` para previsualización de temas SDDM
+- `pkexec` / PolicyKit para aplicar cambios en el tema SDDM con privilegios
 
 ## Requisitos
 
@@ -32,6 +34,7 @@ La aplicación ya cuenta con una base funcional para:
 - Linux con escritorio compatible si se desea aplicar cambios en SDDM
 - `ffmpeg` instalado para generar miniaturas de videos
 - `sddm-greeter` instalado si se desea previsualizar el tema localmente
+- `pkexec` (PolicyKit) para aplicar cambios en el tema SDDM
 
 Para comprobar `ffmpeg`:
 
@@ -121,18 +124,18 @@ Contiene las implementaciones de repositorio y utilidades de almacenamiento loca
 - El tema actual se lee desde `/etc/sddm.conf` y, si existe, desde `/etc/sddm.conf.d` en orden alfabético.
 - Para temas tradicionales, el fondo se obtiene desde `theme.conf` (`[General] background`).
 - Para SilentSDDM, el fondo se obtiene desde `metadata.desktop` → `ConfigFile=` → `configs/*.conf`, leyendo `[LoginScreen] background` o `[LockScreen] background` y resolviendo rutas relativas contra `backgrounds/`.
-- La acción de aplicar cambios directamente sobre SDDM aún está pendiente.
-- La integración con `pkexec`/Polkit y edición de configuración SDDM sigue en planeación.
+- La acción de **Aplicar** copia el fondo seleccionado (imagen o video) a la carpeta `backgrounds/` del tema SDDM actual y reescribe su configuración (`ConfigFile` de `metadata.desktop` o `theme.conf`) para que las pantallas de login y bloqueo lo usen. El cambio se registra en `~/.local/share/Aura/current_bg.txt`.
+- Si el tema pertenece al sistema (`root`), la escritura se realiza mediante `pkexec`/PolicyKit; si el usuario tiene permisos sobre el tema, se escribe directamente.
+- Para videos animados basta con copiar el archivo con su extensión: el tema decide si lo anima (SilentSDDM admite `mp4`, `mkv`, `mov`, `webm`, `m4v`, entre otros).
 - La aplicación desktop usa `--enable-native-access=ALL-UNNAMED` para compatibilidad con acceso nativo (Skiko/FFmpeg) en JVM recientes; se aplica tanto a las tareas `run`/distribuciones como a las de Compose Hot Reload (`hotRun`/`hotDev`).
 
 ## Próximos pasos
 
-1. Implementar la acción real de `Aplicar` para escribir configuración de SDDM.
-2. Detectar fondos definidos únicamente por color para mostrarlos como vista previa.
-3. Mejorar la gestión de errores y permisos.
-4. Separar mejor las pantallas y estados por tipo de medio.
-5. Añadir pruebas para repositorio, detección SDDM, selección e importación.
-6. Mostrar en la UI un error claro cuando `sddm-greeter` no esté instalado.
+1. Detectar fondos definidos únicamente por color para mostrarlos como vista previa.
+2. Mejorar la gestión de errores y permisos.
+3. Separar mejor las pantallas y estados por tipo de medio.
+4. Añadir pruebas para repositorio, detección SDDM, selección e importación.
+5. Mostrar en la UI un error claro cuando `sddm-greeter` no esté instalado.
 
 ## Flujo de desarrollo
 

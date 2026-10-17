@@ -98,16 +98,18 @@ fun FooterScreen(
                 .height(42.dp)
                 .clip(CircleShape)
                 .background(
-                    if (viewModel.selectedFile != null) AuraColors.Primary else AuraColors.SurfaceElevated
+                    if (viewModel.selectedFile != null && !viewModel.isApplying) AuraColors.Primary else AuraColors.SurfaceElevated
                 )
                 .pointerHoverIcon(PointerIcon.Hand)
-                .clickable { },
+                .clickable(enabled = viewModel.selectedFile != null && !viewModel.isApplying) {
+                    viewModel.toggleViewDialogApply()
+                },
             contentAlignment = Alignment.Center
         ) {
             Text(
-                text = "Aplicar",
+                text = if (viewModel.isApplying) "Aplicando..." else "Aplicar",
                 fontSize = 15.sp,
-                color = if (viewModel.selectedFile != null) AuraColors.Background else AuraColors.TextSecondary,
+                color = if (viewModel.selectedFile != null && !viewModel.isApplying) AuraColors.Background else AuraColors.TextSecondary,
                 fontWeight = FontWeight.Bold,
             )
         }

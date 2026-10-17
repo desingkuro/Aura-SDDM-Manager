@@ -1,5 +1,6 @@
 package com.example.aura.data.repository
 
+import com.example.aura.domain.models.ApplyBackgroundResult
 import com.example.aura.domain.repository.SddmRepository
 import java.io.File
 import java.nio.file.Files
@@ -13,7 +14,7 @@ class SddmRepositoryImpl(
     private val sddmConfDir: File = File("/etc/sddm.conf.d"),
 ) : SddmRepository {
 
-    private val videoExtensions = listOf("mp4", "mkv", "avi", "mov", "wmv", "flv", "webm")
+    private val videoExtensions = listOf("mp4", "mkv", "avi", "mov", "wmv", "flv", "webm", "m4v")
 
     override fun getCurrentTheme(): String {
         val themeRegex = """(?i)^\s*Current\s*=\s*["']?([^"'\s#]+)["']?""".toRegex()
@@ -124,6 +125,169 @@ class SddmRepositoryImpl(
             }
         }
     }
+
+    override fun applyBackground(background: File): ApplyBackgroundResult {
+        if (!background.isFile) {
+            return ApplyBackgroundResult.Failure("El archivo seleccionado ya no existe.")
+        }
+
+        return try {
+            val themeName = getCurrentTheme()
+            val themeDir = File(themesDir, themeName)
+            if (!themeDir.isDirectory) {
+                return ApplyBackgroundResult.Failure(
+                    "No se encontró el tema \"$themeName\" en ${themesDir.absolutePath}."
+                )
+            }
+
+            val sourceBackgroundsDir = themeDir.listFiles()
+                ?.firstOrNull { it.isDirectory && it.name.equals("backgrounds", ignoreCase = true) }
+            val backgroundsDirName = sourceBackgroundsDir?.name ?: "backgrounds"
+            val backgroundsDir = File(themeDir, backgroundsDirName)
+            val targetBackground = File(backgroundsDir, background.name)
+
+            val configuredRelativePath = readConfiguredThemePath(themeDir)
+            val configFile: File
+            val newConfigContent: String
+
+            if (configuredRelativePath != null) {
+                configFile = File(themeDir, configuredRelativePath)
+                if (!configFile.isFile) {
+                    return ApplyBackgroundResult.Failure(
+                        "No se encontró el archivo de configuración del tema \"$themeName\"."
+                    )
+                }
+                newConfigContent = buildConfiguredThemePreview(configFile.readText(), background.name)
+            } else {
+                configFile = File(themeDir, "theme.conf")
+                if (!configFile.isFile) {
+                    return ApplyBackgroundResult.Failure(
+                        "El tema \"$themeName\" no tiene una configuración de fondo compatible."
+                    )
+                }
+                newConfigContent = buildThemeConfPreview(
+                    content = configFile.readText(),
+                    fileName = background.name,
+                    backgroundsFolder = backgroundsDirName,
+                )
+            }
+
+            // Si la carpeta de fondos aún no existe, se comprueba el directorio del
+            // tema que la contendrá, ya que Files.isWritable da false en rutas inexistentes.
+            val backgroundsWritable = if (backgroundsDir.exists()) {
+                Files.isWritable(backgroundsDir.toPath())
+            } else {
+                Files.isWritable(themeDir.toPath())
+            }
+            val requiresElevation = !backgroundsWritable || !Files.isWritable(configFile.toPath())
+            val error = if (requiresElevation) {
+                applyWithElevatedPrivileges(background, targetBackground, backgroundsDir, configFile, newConfigContent)
+            } else {
+                applyDirectly(background, targetBackground, backgroundsDir, configFile, newConfigContent)
+            }
+
+            if (error != null) {
+                ApplyBackgroundResult.Failure(error)
+            } else {
+                saveAppliedBackground(background)
+                println("Fondo aplicado: \"${background.name}\" en el tema \"$themeName\".")
+                ApplyBackgroundResult.Success(background.name, themeName)
+            }
+        } catch (e: Exception) {
+            println("Error al aplicar el fondo: ${e.message}")
+            e.printStackTrace()
+            ApplyBackgroundResult.Failure("No se pudo aplicar el fondo: ${e.message ?: "error desconocido"}")
+        }
+    }
+
+    /**
+     * Aplica el fondo escribiendo directamente en el tema (cuando el usuario tiene
+     * permisos sobre él).
+     */
+    private fun applyDirectly(
+        source: File,
+        targetBackground: File,
+        backgroundsDir: File,
+        configFile: File,
+        newConfigContent: String,
+    ): String? {
+        return try {
+            backgroundsDir.mkdirs()
+            Files.copy(source.toPath(), targetBackground.toPath(), StandardCopyOption.REPLACE_EXISTING)
+            configFile.writeText(newConfigContent)
+            null
+        } catch (e: Exception) {
+            "No se pudo aplicar el fondo: ${e.message ?: "error desconocido"}"
+        }
+    }
+
+    /**
+     * Aplica el fondo mediante `pkexec`, que solicita la contraseña del
+     * administrador a través de PolicyKit. Se prepara un pequeño script que copia
+     * el fondo y la nueva configuración con permisos de root.
+     */
+    private fun applyWithElevatedPrivileges(
+        source: File,
+        targetBackground: File,
+        backgroundsDir: File,
+        configFile: File,
+        newConfigContent: String,
+    ): String? {
+        val pkexecPath = getPkexecPath()
+        if (pkexecPath.isBlank()) {
+            return "Se requieren permisos de administrador. Instala \"pkexec\" (PolicyKit) para aplicar cambios en SDDM."
+        }
+
+        var tempDir: File? = null
+        return try {
+            tempDir = Files.createTempDirectory("aura-sddm-apply-").toFile()
+
+            val stagedConfig = File(tempDir, "theme.conf")
+            stagedConfig.writeText(newConfigContent)
+
+            val script = File(tempDir, "apply.sh")
+            script.writeText(
+                buildString {
+                    appendLine("#!/bin/sh")
+                    appendLine("set -e")
+                    appendLine("mkdir -p -- ${shellQuote(backgroundsDir.absolutePath)}")
+                    appendLine("cp -f -- ${shellQuote(source.absolutePath)} ${shellQuote(targetBackground.absolutePath)}")
+                    appendLine("chmod 644 -- ${shellQuote(targetBackground.absolutePath)}")
+                    appendLine("cp -f -- ${shellQuote(stagedConfig.absolutePath)} ${shellQuote(configFile.absolutePath)}")
+                    appendLine("chmod 644 -- ${shellQuote(configFile.absolutePath)}")
+                }
+            )
+            script.setExecutable(true)
+
+            val process = ProcessBuilder(pkexecPath, "/bin/sh", script.absolutePath)
+                .redirectErrorStream(true)
+                .start()
+            val output = process.inputStream.bufferedReader().use { it.readText() }.trim()
+            val exitCode = process.waitFor()
+
+            when (exitCode) {
+                0 -> null
+                126, 127 -> "Autenticación cancelada o no fue posible aplicar el fondo con pkexec."
+                else -> "No se pudo aplicar el fondo (código $exitCode).${if (output.isNotBlank()) " $output" else ""}"
+            }
+        } catch (e: Exception) {
+            "No se pudo aplicar el fondo: ${e.message ?: "error desconocido"}"
+        } finally {
+            tempDir?.let { deleteRecursively(it) }
+        }
+    }
+
+    private fun getPkexecPath(): String {
+        val possiblePaths = listOf(
+            "/usr/bin/pkexec",
+            "/bin/pkexec",
+            "/usr/local/bin/pkexec"
+        )
+        return possiblePaths.firstOrNull { File(it).isFile } ?: ""
+    }
+
+    /** Escapa un valor para usarlo como argumento literal en un script de shell. */
+    private fun shellQuote(value: String): String = "'" + value.replace("'", "'\\''") + "'"
 
     private fun readSddmConfigFiles(): List<File> {
         val files = mutableListOf<File>()

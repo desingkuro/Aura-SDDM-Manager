@@ -255,6 +255,31 @@ fun MainScreen(
         message = viewModel.errorMessage.orEmpty(),
         onDismiss = { viewModel.clearError() }
     )
+
+    // Confirmación antes de aplicar el fondo al tema SDDM.
+    CustomAlertDialog(
+        showDialog = viewModel.viewDialogApply,
+        title = "Aplicar fondo",
+        message = buildString {
+            append("Se aplicará \"${viewModel.selectedFile?.name}\" como fondo del tema SDDM")
+            if (viewModel.currentTheme.isNotBlank()) append(" \"${viewModel.currentTheme}\"")
+            append(".\n\nSe solicitarán permisos de administrador. ¿Deseas continuar?")
+        },
+        confirmText = "Aplicar",
+        onDismiss = { viewModel.toggleViewDialogApply() },
+        onConfirm = {
+            viewModel.toggleViewDialogApply()
+            viewModel.applySelectedBackground()
+        }
+    )
+
+    // Resultado de la aplicación (éxito o error).
+    CustomAlertDialog(
+        showDialog = viewModel.applyMessage != null,
+        title = if (viewModel.applySucceeded) "Fondo aplicado" else "No se pudo aplicar",
+        message = viewModel.applyMessage.orEmpty(),
+        onDismiss = { viewModel.clearApplyMessage() }
+    )
 }
 
 @Composable

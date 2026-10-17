@@ -5,9 +5,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.example.aura.data.repository.MediaRepositoryImple
 import com.example.aura.data.repository.SddmRepositoryImpl
+import com.example.aura.domain.models.ApplyBackgroundResult
 import com.example.aura.domain.repository.MediaRepository
 import com.example.aura.domain.repository.SddmRepository
 import java.io.File
+import kotlin.concurrent.thread
 
 class MediaViewModel(
     private val mediaRepository: MediaRepository = MediaRepositoryImple(),
@@ -34,8 +36,27 @@ class MediaViewModel(
     var viewDialogDeleted by mutableStateOf(false)
         private set
 
+    var currentTheme by mutableStateOf("")
+        private set
+
+    var isApplying by mutableStateOf(false)
+        private set
+
+    var viewDialogApply by mutableStateOf(false)
+        private set
+
+    var applyMessage by mutableStateOf<String?>(null)
+        private set
+
+    var applySucceeded by mutableStateOf(false)
+        private set
+
     fun toggleViewDialog() {
         viewDialogDeleted = !viewDialogDeleted
+    }
+
+    fun toggleViewDialogApply() {
+        viewDialogApply = !viewDialogApply
     }
 
     fun loadImages() {
@@ -48,6 +69,7 @@ class MediaViewModel(
 
     fun loadFileApplied() {
         fileApplied = sddmRepository.getAppliedBackground()
+        currentTheme = sddmRepository.getCurrentTheme()
     }
 
     fun importNewFile(file: File) {
@@ -94,5 +116,37 @@ class MediaViewModel(
 
     fun launchSddmPreview() {
         sddmRepository.launchPreview(selectedFile)
+    }
+
+    /**
+     * Aplica el fondo seleccionado (imagen o video) al tema SDDM actual. El trabajo
+     * pesado se ejecuta en segundo plano porque puede solicitar la contraseña de
+     * administrador mediante `pkexec`.
+     */
+    fun applySelectedBackground() {
+        val file = selectedFile ?: return
+        if (isApplying) return
+
+        isApplying = true
+        thread(isDaemon = true) {
+            when (val result = sddmRepository.applyBackground(file)) {
+                is ApplyBackgroundResult.Success -> {
+                    applySucceeded = true
+                    applyMessage = "\"${result.backgroundName}\" se aplicó correctamente al tema " +
+                        "\"${result.themeName}\".\n\nReinicia SDDM o cierra sesión para ver el cambio."
+                }
+
+                is ApplyBackgroundResult.Failure -> {
+                    applySucceeded = false
+                    applyMessage = result.message
+                }
+            }
+            isApplying = false
+            loadFileApplied()
+        }
+    }
+
+    fun clearApplyMessage() {
+        applyMessage = null
     }
 }
