@@ -1,18 +1,21 @@
 package com.example.aura.presentation.viewmodels
 
-import androidx.compose.runtime.mutableStateOf
-import com.example.aura.data.repository.MediaRepositoryImple
-import com.example.aura.domain.repository.MediaRepository
-import java.io.File
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import kotlin.concurrent.thread
+import com.example.aura.data.repository.MediaRepositoryImple
+import com.example.aura.data.repository.SddmRepositoryImpl
+import com.example.aura.domain.repository.MediaRepository
+import com.example.aura.domain.repository.SddmRepository
+import java.io.File
 
 class MediaViewModel(
-    private val mediaRepository: MediaRepository = MediaRepositoryImple()
-){
+    private val mediaRepository: MediaRepository = MediaRepositoryImple(),
+    private val sddmRepository: SddmRepository = SddmRepositoryImpl(),
+) {
     var listImages by mutableStateOf<List<File>>(emptyList())
-    private set
+        private set
+
     var listVideo by mutableStateOf<List<File>>(emptyList())
         private set
 
@@ -25,31 +28,29 @@ class MediaViewModel(
     var selectedTypeFile by mutableStateOf<String?>(null)
         private set
 
-    var fileApplied by mutableStateOf< Pair<File, String>?>(null)
+    var fileApplied by mutableStateOf<Pair<File, String>?>(null)
         private set
 
-    var viewDialogDeleted by mutableStateOf<Boolean>(false)
+    var viewDialogDeleted by mutableStateOf(false)
         private set
 
     fun toggleViewDialog() {
         viewDialogDeleted = !viewDialogDeleted
     }
 
-    fun loadImages(){
+    fun loadImages() {
         listImages = mediaRepository.getImageFiles()
-        print("loadImages $listImages")
     }
 
-    fun loadVideos(){
+    fun loadVideos() {
         listVideo = mediaRepository.getVideoFiles()
-        print("loadVideo $listVideo")
     }
 
-    fun loadFileApplied(){
-        fileApplied = mediaRepository.getAppliedbackground()
+    fun loadFileApplied() {
+        fileApplied = sddmRepository.getAppliedBackground()
     }
 
-    fun importNewFile(file: File){
+    fun importNewFile(file: File) {
         try {
             mediaRepository.createMediaDirectory(file)
             errorMessage = null
@@ -65,70 +66,33 @@ class MediaViewModel(
         errorMessage = null
     }
 
-    fun selectFile(file: File, type: String){
-        print("Selecione o file ${file.name}")
+    fun selectFile(file: File, type: String) {
         selectedFile = file
         selectedTypeFile = type
     }
 
     fun deleteMedia(file: File?) {
-        if(file == null) return
-        val success = mediaRepository.deletedFile(file)
-        if (success) {
-            // Si se borró del disco, volvemos a cargar la lista de la carpeta.
-            // Esto hará que el archivo desaparezca mágicamente de la pantalla.
-            loadImages()
+        if (file == null) return
 
-            // Opcional: Si el archivo borrado era el que estaba seleccionado como "borrador", lo limpiamos
+        if (mediaRepository.deletedFile(file)) {
             if (selectedFile?.absolutePath == file.absolutePath) {
                 selectedFile = null
+                selectedTypeFile = null
             }
+            loadImages()
+            loadVideos()
         }
     }
 
-    fun getPahtSddm(): String?{
-        val possiblePaths = listOf(
-            "/usr/bin/sddm-greeter-qt6",     // Tu ruta exacta en PikaOS
-            "/usr/bin/sddm-greeter",         // Clásico
-            "/usr/libexec/sddm-greeter-qt6",
-            "/usr/libexec/sddm-greeter",
-            "/usr/lib/sddm/sddm-greeter",
-            "/usr/lib/x86_64-linux-gnu/sddm/sddm-greeter"
-        )
-        val executablePaht = possiblePaths.find { java.io.File(it).exists() }
-        return executablePaht
+    fun getCurrentThemeSddm(): String {
+        return sddmRepository.getCurrentTheme()
     }
 
-    fun getCurrentThemeSddm(): String{
-        return mediaRepository.getCurrentTheme()
+    fun getGreeterPathSddm(): String {
+        return sddmRepository.getGreeterPath()
     }
 
-    fun launchSddmPreview(){
-        thread {
-            try {
-                val paht = getPahtSddm()
-                if(paht != null){
-                    // Tumchya active theme cha path ithe taka (udaharanarth "breeze", "maldives", kiva ji theme tumhi vapartay)
-                    val currentThemeName = getCurrentThemeSddm()
-                    val themePath = "/usr/share/sddm/themes/$currentThemeName"
-
-                    println("Lanzando previsualización con tema: $themePath")
-                    println("Ejecutando SDDM Greeter desde: $paht")
-                    //Ejecutamos el codigo nativo del sddm
-                    val process = ProcessBuilder(paht, "--test-mode", "--theme", themePath)
-                        .inheritIO().start()
-                    //esperar a que el usuario cierre la ventana
-                    process.waitFor()
-                }else {
-                    // Si no existe en ninguna parte (el usuario no tiene SDDM instalado)
-                    println("Error: No se encontró sddm-greeter en el sistema.")
-                    // Opcional: Aquí podrías cambiar una variable para mostrar un CustomAlertDialog
-                }
-            }
-            catch (e: Exception){
-                println("Error al intentar abrir el preview de SDDM: ${e.message}")
-                e.printStackTrace()
-            }
-        }
+    fun launchSddmPreview() {
+        sddmRepository.launchPreview()
     }
 }
