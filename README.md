@@ -100,14 +100,16 @@ Contiene la interfaz de usuario, navegación, componentes visuales, utilidades d
 
 Contiene contratos y modelos independientes de la UI.
 
-- `MediaRepository`: contrato para leer e importar archivos multimedia.
+- `MediaRepository`: contrato para listar, importar y eliminar archivos multimedia.
+- `SddmRepository`: contrato para detectar tema/fondo, ubicar el greeter y lanzar la previsualización.
 - `models/`: modelos base de la aplicación.
 
 ### Data
 
-Contiene la implementación del repositorio y utilidades de almacenamiento local.
+Contiene las implementaciones de repositorio y utilidades de almacenamiento local.
 
 - `MediaRepositoryImple`: filtra imágenes/videos y copia archivos al almacenamiento local.
+- `SddmRepositoryImpl`: detecta el tema actual, resuelve el fondo aplicado y lanza `sddm-greeter`.
 - `StorageManager`: crea/usa el directorio local de medios.
 
 ## Consideraciones actuales
@@ -115,19 +117,20 @@ Contiene la implementación del repositorio y utilidades de almacenamiento local
 - Las imágenes se cargan directamente desde archivos locales.
 - Los videos se representan mediante una miniatura extraída con `ffmpeg`.
 - La previsualización con `sddm-greeter` busca el ejecutable en rutas comunes de Linux.
-- Existe `getCurrentTheme()` para leer el tema actual desde la configuración de SDDM, pero la previsualización todavía usa el tema fijo `breeze`; falta conectarla.
-- La carpeta `sddm.conf.d` aún debe revisarse para leer la ruta correcta en todas las distribuciones.
+- El tema actual se lee desde `/etc/sddm.conf` y, si existe, desde `/etc/sddm.conf.d` en orden alfabético.
+- Para temas tradicionales, el fondo se obtiene desde `theme.conf` (`[General] background`).
+- Para SilentSDDM, el fondo se obtiene desde `metadata.desktop` → `ConfigFile=` → `configs/*.conf`, leyendo `[LoginScreen] background` o `[LockScreen] background` y resolviendo rutas relativas contra `backgrounds/`.
 - La acción de aplicar cambios directamente sobre SDDM aún está pendiente.
 - La integración con `pkexec`/Polkit y edición de configuración SDDM sigue en planeación.
 - La aplicación desktop usa `--enable-native-access=ALL-UNNAMED` para compatibilidad con acceso nativo en JVM recientes.
 
 ## Próximos pasos
 
-1. Conectar `getCurrentTheme()` a la previsualización para usar dinámicamente el tema actual de SDDM.
-2. Implementar la acción real de `Aplicar` para escribir configuración de SDDM.
+1. Implementar la acción real de `Aplicar` para escribir configuración de SDDM.
+2. Detectar fondos definidos únicamente por color para mostrarlos como vista previa.
 3. Mejorar la gestión de errores y permisos.
 4. Separar mejor las pantallas y estados por tipo de medio.
-5. Añadir pruebas para repositorio, selección e importación.
+5. Añadir pruebas para repositorio, detección SDDM, selección e importación.
 6. Mostrar en la UI un error claro cuando `sddm-greeter` no esté instalado.
 
 ## Flujo de desarrollo
