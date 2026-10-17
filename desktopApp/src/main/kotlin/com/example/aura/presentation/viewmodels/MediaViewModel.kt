@@ -93,6 +93,6 @@ class MediaViewModel(
     }
 
     fun launchSddmPreview() {
-        sddmRepository.launchPreview()
+        sddmRepository.launchPreview(selectedFile)
     }
 }

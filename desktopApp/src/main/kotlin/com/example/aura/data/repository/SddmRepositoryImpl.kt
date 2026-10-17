@@ -2,6 +2,8 @@ package com.example.aura.data.repository
 
 import com.example.aura.domain.repository.SddmRepository
 import java.io.File
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import kotlin.concurrent.thread
 
 class SddmRepositoryImpl(
@@ -65,8 +67,15 @@ class SddmRepositoryImpl(
         return possiblePaths.firstOrNull { File(it).isFile } ?: ""
     }
 
-    override fun launchPreview() {
+    override fun launchPreview(background: File?) {
+        if (background == null || !background.isFile) {
+            println("No hay un fondo seleccionado para previsualizar.")
+            return
+        }
+
         thread(isDaemon = true) {
+            var tempThemeDir: File? = null
+            var shutdownHook: Thread? = null
             try {
                 val greeterPath = getGreeterPath()
                 if (greeterPath.isBlank()) {
@@ -74,19 +83,44 @@ class SddmRepositoryImpl(
                     return@thread
                 }
 
-                val currentTheme = getCurrentTheme()
-                val themePath = File(themesDir, currentTheme).absolutePath
+                val themeName = getCurrentTheme()
+                val sourceThemeDir = File(themesDir, themeName)
+                if (!sourceThemeDir.isDirectory) {
+                    println("Error: No se encontró el tema actual '$themeName' en $themesDir.")
+                    return@thread
+                }
 
-                println("Lanzando previsualización con tema: $themePath")
-                println("Ejecutando SDDM Greeter desde: $greeterPath")
+                tempThemeDir = createTemporaryTheme(sourceThemeDir, background)
+                if (tempThemeDir == null) {
+                    println("Error: No se pudo preparar el tema temporal de previsualización.")
+                    return@thread
+                }
 
-                ProcessBuilder(greeterPath, "--test-mode", "--theme", themePath)
+                val previewDir = tempThemeDir
+                shutdownHook = Thread { deleteRecursively(previewDir) }
+                Runtime.getRuntime().addShutdownHook(shutdownHook)
+
+                println("Abriendo previsualización con '${background.name}' usando el tema temporal ${tempThemeDir.absolutePath}")
+
+                ProcessBuilder(greeterPath, "--test-mode", "--theme", tempThemeDir.absolutePath)
                     .inheritIO()
                     .start()
                     .waitFor()
             } catch (e: Exception) {
                 println("Error al intentar abrir el preview de SDDM: ${e.message}")
                 e.printStackTrace()
+            } finally {
+                shutdownHook?.let { hook ->
+                    try {
+                        Runtime.getRuntime().removeShutdownHook(hook)
+                    } catch (_: IllegalStateException) {
+                        // El JVM ya está cerrando: el hook se encargará del borrado.
+                    }
+                }
+                tempThemeDir?.let { dir ->
+                    deleteRecursively(dir)
+                    println("Tema temporal de previsualización eliminado: ${dir.absolutePath}")
+                }
             }
         }
     }
@@ -141,7 +175,233 @@ class SddmRepositoryImpl(
         return null
     }
 
-    private fun readConfiguredThemeFile(themeDir: File): File? {
+    /**
+     * Crea una copia temporal del [sourceThemeDir] donde todas las referencias al
+     * fondo apuntan a [background]. El resto del tema se enlaza simbólicamente para
+     * no duplicar archivos (fuentes, componentes, iconos, etc.).
+     */
+    private fun createTemporaryTheme(sourceThemeDir: File, background: File): File? {
+        return try {
+            cleanupStalePreviewThemes()
+            val tempThemeDir = Files.createTempDirectory("aura-sddm-preview-").toFile()
+            val configuredRelativePath = readConfiguredThemePath(sourceThemeDir)
+            val configuredDirName = configuredRelativePath?.substringBefore('/')?.takeIf { it.isNotBlank() }
+            val sourceBackgroundsDir = sourceThemeDir.listFiles()
+                ?.firstOrNull { it.isDirectory && it.name.equals("backgrounds", ignoreCase = true) }
+
+            // Enlaza (o copia) el contenido del tema, excepto la carpeta de fondos y
+            // el directorio que contiene el archivo de configuración, que se recrean.
+            sourceThemeDir.listFiles()?.forEach { child ->
+                when {
+                    child.name.equals("backgrounds", ignoreCase = true) -> Unit
+                    configuredDirName != null && child.name == configuredDirName ->
+                        child.copyRecursively(File(tempThemeDir, child.name), overwrite = true)
+                    else -> linkOrCopy(child, File(tempThemeDir, child.name))
+                }
+            }
+
+            // Los temas con ConfigFile (SilentSDDM) siempre resuelven "backgrounds/".
+            val backgroundsDir = File(tempThemeDir, sourceBackgroundsDir?.name ?: "backgrounds")
+            backgroundsDir.mkdirs()
+
+            sourceBackgroundsDir?.listFiles()?.forEach { backgroundFile ->
+                linkOrCopy(backgroundFile, File(backgroundsDir, backgroundFile.name))
+            }
+
+            val tempBackground = File(backgroundsDir, background.name)
+            Files.copy(background.toPath(), tempBackground.toPath(), StandardCopyOption.REPLACE_EXISTING)
+
+            if (configuredRelativePath != null) {
+                val sourceConfig = File(sourceThemeDir, configuredRelativePath)
+                val tempConfig = File(tempThemeDir, configuredRelativePath)
+                tempConfig.parentFile?.mkdirs()
+                tempConfig.writeText(
+                    buildConfiguredThemePreview(sourceConfig.readText(), background.name)
+                )
+            } else {
+                val sourceThemeConf = File(sourceThemeDir, "theme.conf")
+                if (sourceThemeConf.isFile) {
+                    File(tempThemeDir, "theme.conf").writeText(
+                        buildThemeConfPreview(
+                            sourceThemeConf.readText(),
+                            fileName = background.name,
+                            backgroundsFolder = backgroundsDir.name
+                        )
+                    )
+                }
+            }
+
+            tempThemeDir
+        } catch (e: Exception) {
+            println("Error al crear el tema temporal: ${e.message}")
+            e.printStackTrace()
+            null
+        }
+    }
+
+    /**
+     * Reescribe un archivo de configuración tipo SilentSDDM para que las pantallas
+     * de login y bloqueo usen [backgroundName] y no un color de fondo.
+     */
+    private fun buildConfiguredThemePreview(content: String, backgroundName: String): String {
+        val output = mutableListOf<String>()
+        var section = ""
+        var loginApplied = false
+        var lockApplied = false
+
+        content.lineSequence().forEach { rawLine ->
+            val trimmed = rawLine.trim()
+
+            if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+                section = trimmed.substring(1, trimmed.length - 1).trim().lowercase()
+                output.add(rawLine)
+                return@forEach
+            }
+
+            if (trimmed.isEmpty() || trimmed.startsWith(";") || trimmed.startsWith("#")) {
+                output.add(rawLine)
+                return@forEach
+            }
+
+            val separatorIndex = trimmed.indexOf('=')
+            if (separatorIndex <= 0) {
+                output.add(rawLine)
+                return@forEach
+            }
+
+            val key = trimmed.substring(0, separatorIndex).trim().lowercase()
+            if (section == "loginscreen" || section == "lockscreen") {
+                when (key) {
+                    "background" -> {
+                        output.add("background = \"$backgroundName\"")
+                        if (section == "loginscreen") loginApplied = true else lockApplied = true
+                        return@forEach
+                    }
+                    "use-background-color" -> {
+                        output.add("use-background-color = false")
+                        return@forEach
+                    }
+                }
+            }
+
+            output.add(rawLine)
+        }
+
+        if (!loginApplied) {
+            output.add("")
+            output.add("[LoginScreen]")
+            output.add("background = \"$backgroundName\"")
+            output.add("use-background-color = false")
+        }
+        if (!lockApplied) {
+            output.add("")
+            output.add("[LockScreen]")
+            output.add("background = \"$backgroundName\"")
+            output.add("use-background-color = false")
+        }
+
+        return output.joinToString("\n")
+    }
+
+    /**
+     * Reescribe un `theme.conf` tradicional para apuntar al fondo seleccionado.
+     */
+    private fun buildThemeConfPreview(
+        content: String,
+        fileName: String,
+        backgroundsFolder: String,
+    ): String {
+        val output = mutableListOf<String>()
+        var applied = false
+        val backgroundValue = "$backgroundsFolder/$fileName"
+
+        content.lineSequence().forEach { rawLine ->
+            val trimmed = rawLine.trim()
+
+            if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+                output.add(rawLine)
+                return@forEach
+            }
+
+            if (trimmed.isEmpty() || trimmed.startsWith(";") || trimmed.startsWith("#")) {
+                output.add(rawLine)
+                return@forEach
+            }
+
+            val separatorIndex = trimmed.indexOf('=')
+            if (separatorIndex <= 0) {
+                output.add(rawLine)
+                return@forEach
+            }
+
+            val key = trimmed.substring(0, separatorIndex).trim().lowercase()
+            if (key == "background") {
+                output.add("background=$backgroundValue")
+                applied = true
+                return@forEach
+            }
+
+            output.add(rawLine)
+        }
+
+        if (!applied) {
+            if (output.none { it.trim().equals("[General]", ignoreCase = true) }) {
+                output.add("")
+                output.add("[General]")
+            }
+            output.add("background=$backgroundValue")
+        }
+
+        return output.joinToString("\n")
+    }
+
+    private fun linkOrCopy(source: File, target: File) {
+        try {
+            if (target.exists()) return
+            Files.createSymbolicLink(target.toPath(), source.toPath())
+        } catch (e: Exception) {
+            try {
+                if (source.isDirectory) {
+                    source.copyRecursively(target, overwrite = true)
+                } else {
+                    target.parentFile?.mkdirs()
+                    source.copyTo(target, overwrite = true)
+                }
+            } catch (copyError: Exception) {
+                println("No se pudo preparar ${source.absolutePath}: ${copyError.message}")
+            }
+        }
+    }
+
+    private fun deleteRecursively(file: File) {
+        try {
+            if (file.isDirectory) {
+                file.listFiles()?.forEach { deleteRecursively(it) }
+            }
+            file.delete()
+        } catch (e: Exception) {
+            println("No se pudo eliminar ${file.absolutePath}: ${e.message}")
+        }
+    }
+
+    /**
+     * Elimina temas temporales de previsualización que hayan quedado huérfanos
+     * (por ejemplo, si la aplicación se cerró mientras el preview estaba abierto).
+     */
+    private fun cleanupStalePreviewThemes(maxAgeMillis: Long = 60 * 60 * 1000) {
+        try {
+            val now = System.currentTimeMillis()
+            File(System.getProperty("java.io.tmpdir"))
+                .listFiles()
+                ?.filter { it.isDirectory && it.name.startsWith("aura-sddm-preview-") }
+                ?.filter { now - it.lastModified() > maxAgeMillis }
+                ?.forEach { deleteRecursively(it) }
+        } catch (e: Exception) {
+            println("No se pudieron limpiar previsualizaciones anteriores: ${e.message}")
+        }
+    }
+
+    private fun readConfiguredThemePath(themeDir: File): String? {
         val metadata = File(themeDir, "metadata.desktop")
         if (!metadata.isFile) return null
 
@@ -155,7 +415,11 @@ class SddmRepositoryImpl(
             }
         }
 
-        if (configPath.isBlank()) return null
+        return configPath.ifBlank { null }
+    }
+
+    private fun readConfiguredThemeFile(themeDir: File): File? {
+        val configPath = readConfiguredThemePath(themeDir) ?: return null
 
         val configFile = if (File(configPath).isAbsolute) {
             File(configPath)
