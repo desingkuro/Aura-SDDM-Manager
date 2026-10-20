@@ -5,6 +5,7 @@ import com.example.aura.domain.models.RestoreBackupResult
 import org.junit.Test
 import java.io.File
 import java.nio.file.Files
+import java.nio.file.attribute.PosixFilePermissions
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
@@ -20,6 +21,8 @@ class SddmBackupTest {
             val applyResult = env.repository.applyBackground(env.source)
             assertTrue(applyResult is ApplyBackgroundResult.Success)
             assertTrue(env.themeConfig.readText().contains("source.jpg"))
+            env.assertNoAtomicTemps()
+            env.assertConfigPermissions()
 
             val backups = env.repository.listBackups()
             assertEquals(1, backups.size)
@@ -38,6 +41,8 @@ class SddmBackupTest {
             assertTrue(env.themeConfig.readText().contains("old.jpg"))
             assertEquals(env.oldBackground.absolutePath, env.currentBg.readText())
             assertFalse(File(env.backgroundsDir, "source.jpg").exists())
+            env.assertNoAtomicTemps()
+            env.assertConfigPermissions()
         } finally {
             env.close()
         }
@@ -52,6 +57,7 @@ class SddmBackupTest {
             val applyResult = env.repository.applyBackground(replacement)
             assertTrue(applyResult is ApplyBackgroundResult.Success)
             assertEquals("new-bytes", env.oldBackground.readText())
+            env.assertNoAtomicTemps()
 
             val backup = env.repository.listBackups().single()
             assertTrue(backup.targetBackgroundExisted)
@@ -62,6 +68,28 @@ class SddmBackupTest {
             assertTrue(restoreResult is RestoreBackupResult.Success)
             assertEquals("old-bytes", env.oldBackground.readText())
             assertTrue(env.themeConfig.readText().contains("old.jpg"))
+            env.assertNoAtomicTemps()
+            env.assertConfigPermissions()
+        } finally {
+            env.close()
+        }
+    }
+
+    @Test
+    fun `respeta un symlink en la configuracion al escribir`() {
+        val env = TestEnvironment()
+        try {
+            val realConfig = File(env.themeConfig.parentFile, "real.conf")
+            Files.move(env.themeConfig.toPath(), realConfig.toPath())
+            Files.createSymbolicLink(env.themeConfig.toPath(), realConfig.toPath())
+            assertTrue(Files.isSymbolicLink(env.themeConfig.toPath()))
+
+            env.source.writeText("new-bytes")
+            val applyResult = env.repository.applyBackground(env.source)
+            assertTrue(applyResult is ApplyBackgroundResult.Success)
+            assertTrue(Files.isSymbolicLink(env.themeConfig.toPath()))
+            assertTrue(realConfig.readText().contains("source.jpg"))
+            env.assertNoAtomicTemps()
         } finally {
             env.close()
         }
@@ -138,6 +166,18 @@ private class TestEnvironment {
             sddmConfDir = sddmConfDir,
             backupsDir = backupsDir,
         )
+    }
+
+    fun assertNoAtomicTemps() {
+        val leftovers = themeConfig.parentFile.listFiles()
+            ?.filter { it.name.startsWith(".${themeConfig.name}.aura-") }
+            .orEmpty()
+        assertTrue(leftovers.isEmpty(), "Temporales sin limpiar: ${leftovers.map { it.name }}")
+    }
+
+    fun assertConfigPermissions() {
+        val permissions = Files.getPosixFilePermissions(themeConfig.toPath())
+        assertEquals("rw-r--r--", PosixFilePermissions.toString(permissions))
     }
 
     fun close() {

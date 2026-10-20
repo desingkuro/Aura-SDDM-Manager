@@ -5,13 +5,17 @@ import com.example.aura.domain.models.RestoreBackupResult
 import com.example.aura.domain.models.SddmBackup
 import com.example.aura.domain.repository.SddmRepository
 import java.io.File
+import java.nio.charset.StandardCharsets
 import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
+import java.nio.file.Path
 import java.nio.file.StandardCopyOption
+import java.nio.file.attribute.PosixFilePermissions
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Properties
+import java.util.UUID
 import kotlin.concurrent.thread
 
 class SddmRepositoryImpl(
@@ -458,11 +462,7 @@ class SddmRepositoryImpl(
         targetExisted: Boolean,
     ): String? {
         return try {
-            Files.copy(
-                File(backupDir, "theme-config").toPath(),
-                themeConfigFile.toPath(),
-                StandardCopyOption.REPLACE_EXISTING,
-            )
+            copyConfigAtomically(File(backupDir, "theme-config"), themeConfigFile)
             if (targetExisted) {
                 Files.copy(
                     File(backupDir, "background").toPath(),
@@ -495,8 +495,11 @@ class SddmRepositoryImpl(
             val script = buildString {
                 appendLine("#!/bin/sh")
                 appendLine("set -e")
-                appendLine("cp -f -- ${shellQuote(backupConfig.absolutePath)} ${shellQuote(themeConfigFile.absolutePath)}")
-                appendLine("chmod 644 -- ${shellQuote(themeConfigFile.absolutePath)}")
+                appendAtomicConfigReplacement(
+                    script = this,
+                    configFile = themeConfigFile,
+                    contentSource = shellQuote(backupConfig.absolutePath),
+                )
                 if (targetExisted) {
                     appendLine("cp -f -- ${shellQuote(backupBackground.absolutePath)} ${shellQuote(targetBackground.absolutePath)}")
                     appendLine("chmod 644 -- ${shellQuote(targetBackground.absolutePath)}")
@@ -523,6 +526,108 @@ class SddmRepositoryImpl(
         }
     }
 
+    /**
+     * Escribe la configuración en un archivo temporal del mismo directorio y la
+     * publica con un rename atómico. Así SDDM nunca ve un archivo a medio escribir.
+     * Se resuelve el destino canónico para no reemplazar un posible symlink.
+     */
+    private fun writeConfigAtomically(configFile: File, content: String) {
+        val resolvedTarget = configFile.canonicalFile
+        val parent = resolvedTarget.parentFile
+            ?: throw IllegalArgumentException(
+                "La configuración no tiene directorio padre: ${resolvedTarget.absolutePath}"
+            )
+        Files.createDirectories(parent.toPath())
+
+        val temporary = Files.createTempFile(
+            parent.toPath(),
+            ".${resolvedTarget.name}.aura-",
+            ".tmp",
+        )
+        try {
+            Files.writeString(temporary, content, StandardCharsets.UTF_8)
+            setConfigPermissions(temporary)
+            moveReplacing(temporary, resolvedTarget.toPath())
+        } catch (e: Exception) {
+            Files.deleteIfExists(temporary)
+            throw e
+        }
+    }
+
+    /**
+     * Restaura un archivo de configuración desde un respaldo con la misma
+     * estrategia de temporal + rename atómico.
+     */
+    private fun copyConfigAtomically(source: File, configFile: File) {
+        val resolvedTarget = configFile.canonicalFile
+        val parent = resolvedTarget.parentFile
+            ?: throw IllegalArgumentException(
+                "La configuración no tiene directorio padre: ${resolvedTarget.absolutePath}"
+            )
+        Files.createDirectories(parent.toPath())
+
+        val temporary = Files.createTempFile(
+            parent.toPath(),
+            ".${resolvedTarget.name}.aura-",
+            ".tmp",
+        )
+        try {
+            Files.copy(source.toPath(), temporary, StandardCopyOption.REPLACE_EXISTING)
+            setConfigPermissions(temporary)
+            moveReplacing(temporary, resolvedTarget.toPath())
+        } catch (e: Exception) {
+            Files.deleteIfExists(temporary)
+            throw e
+        }
+    }
+
+    private fun setConfigPermissions(file: Path) {
+        try {
+            Files.setPosixFilePermissions(
+                file,
+                PosixFilePermissions.fromString("rw-r--r--"),
+            )
+        } catch (_: UnsupportedOperationException) {
+            // En sistemas sin POSIX se conservan los permisos por defecto.
+        }
+    }
+
+    private fun moveReplacing(source: Path, target: Path) {
+        try {
+            Files.move(source, target, StandardCopyOption.ATOMIC_MOVE)
+        } catch (_: AtomicMoveNotSupportedException) {
+            Files.move(source, target, StandardCopyOption.REPLACE_EXISTING)
+        }
+    }
+
+    /**
+     * Añade al script de `pkexec` la sustitución atómica de la configuración.
+     * El temporal se crea en el mismo directorio que el destino para que `mv` sea
+     * un rename dentro del mismo sistema de archivos.
+     */
+    private fun appendAtomicConfigReplacement(
+        script: StringBuilder,
+        configFile: File,
+        contentSource: String,
+    ) {
+        val resolvedTarget = configFile.canonicalFile
+        val parent = resolvedTarget.parentFile
+            ?: throw IllegalArgumentException(
+                "La configuración no tiene directorio padre: ${resolvedTarget.absolutePath}"
+            )
+        val temporary = File(
+            parent,
+            ".${resolvedTarget.name}.aura-${UUID.randomUUID()}.tmp",
+        )
+
+        script.appendLine("tmp_config=${shellQuote(temporary.absolutePath)}")
+        script.appendLine("trap 'rm -f -- \"\$tmp_config\"' 0")
+        script.appendLine("cp -f -- $contentSource \"\$tmp_config\"")
+        script.appendLine("chmod 644 -- \"\$tmp_config\"")
+        script.appendLine("mv -f -- \"\$tmp_config\" ${shellQuote(resolvedTarget.absolutePath)}")
+        script.appendLine("trap - 0")
+    }
+
     private fun sanitizeName(value: String): String =
         value.replace(Regex("[^A-Za-z0-9._-]"), "-").ifBlank { "tema" }
 
@@ -540,7 +645,7 @@ class SddmRepositoryImpl(
         return try {
             backgroundsDir.mkdirs()
             Files.copy(source.toPath(), targetBackground.toPath(), StandardCopyOption.REPLACE_EXISTING)
-            configFile.writeText(newConfigContent)
+            writeConfigAtomically(configFile, newConfigContent)
             null
         } catch (e: Exception) {
             "No se pudo aplicar el fondo: ${e.message ?: "error desconocido"}"
@@ -577,8 +682,11 @@ class SddmRepositoryImpl(
                 appendLine("mkdir -p -- ${shellQuote(backgroundsDir.absolutePath)}")
                 appendLine("cp -f -- ${shellQuote(source.absolutePath)} ${shellQuote(targetBackground.absolutePath)}")
                 appendLine("chmod 644 -- ${shellQuote(targetBackground.absolutePath)}")
-                appendLine("cp -f -- ${shellQuote(stagedConfig.absolutePath)} ${shellQuote(configFile.absolutePath)}")
-                appendLine("chmod 644 -- ${shellQuote(configFile.absolutePath)}")
+                appendAtomicConfigReplacement(
+                    script = this,
+                    configFile = configFile,
+                    contentSource = shellQuote(stagedConfig.absolutePath),
+                )
             }
             runPkexecScript(pkexecPath, scriptContent)
         } catch (e: Exception) {
