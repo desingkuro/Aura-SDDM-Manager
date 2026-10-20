@@ -51,12 +51,22 @@ class MediaViewModel(
     var applySucceeded by mutableStateOf(false)
         private set
 
-    fun toggleViewDialog() {
-        viewDialogDeleted = !viewDialogDeleted
+    fun openDeleteDialog() {
+        if (selectedFile == null) return
+        viewDialogDeleted = true
     }
 
-    fun toggleViewDialogApply() {
-        viewDialogApply = !viewDialogApply
+    fun closeDeleteDialog() {
+        viewDialogDeleted = false
+    }
+
+    fun openApplyDialog() {
+        if (selectedFile == null || isApplying) return
+        viewDialogApply = true
+    }
+
+    fun closeApplyDialog() {
+        viewDialogApply = false
     }
 
     fun loadImages() {

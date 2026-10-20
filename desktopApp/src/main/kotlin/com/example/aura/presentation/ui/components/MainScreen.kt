@@ -228,20 +228,20 @@ fun MainScreen(
     }
 
     CustomAlertDialog(
-        showDialog = viewModel.viewDialogDeleted,
+        showDialog = viewModel.viewDialogDeleted && selectedFile != null,
         title = "Eliminar archivo",
-        message = "¿Estás seguro de que deseas eliminar '${viewModel.selectedFile?.name}'?\nEsta acción no se puede deshacer.",
+        message = selectedFile?.let {
+            "¿Estás seguro de que deseas eliminar '${it.name}'?\nEsta acción no se puede deshacer."
+        }.orEmpty(),
         confirmText = "Sí, eliminar",
         onDismiss = {
             // Si hace clic fuera o cancela, solo cerramos el diálogo
-            viewModel.toggleViewDialog()
+            viewModel.closeDeleteDialog()
         },
         onConfirm = {
             // Si confirma, cerramos el diálogo y ejecutamos la acción de borrar
-            viewModel.toggleViewDialog()
-            viewModel.deleteMedia(viewModel.selectedFile)
-            viewModel.loadVideos()
-            viewModel.loadImages()
+            viewModel.closeDeleteDialog()
+            viewModel.deleteMedia(selectedFile)
         }
     )
 
@@ -254,17 +254,19 @@ fun MainScreen(
 
     // Confirmación antes de aplicar el fondo al tema SDDM.
     CustomAlertDialog(
-        showDialog = viewModel.viewDialogApply,
+        showDialog = viewModel.viewDialogApply && selectedFile != null,
         title = "Aplicar fondo",
-        message = buildString {
-            append("Se aplicará \"${viewModel.selectedFile?.name}\" como fondo del tema SDDM")
-            if (viewModel.currentTheme.isNotBlank()) append(" \"${viewModel.currentTheme}\"")
-            append(".\n\nSe solicitarán permisos de administrador. ¿Deseas continuar?")
-        },
+        message = selectedFile?.let { file ->
+            buildString {
+                append("Se aplicará \"${file.name}\" como fondo del tema SDDM")
+                if (viewModel.currentTheme.isNotBlank()) append(" \"${viewModel.currentTheme}\"")
+                append(".\n\nSe solicitarán permisos de administrador. ¿Deseas continuar?")
+            }
+        }.orEmpty(),
         confirmText = "Aplicar",
-        onDismiss = { viewModel.toggleViewDialogApply() },
+        onDismiss = { viewModel.closeApplyDialog() },
         onConfirm = {
-            viewModel.toggleViewDialogApply()
+            viewModel.closeApplyDialog()
             viewModel.applySelectedBackground()
         }
     )

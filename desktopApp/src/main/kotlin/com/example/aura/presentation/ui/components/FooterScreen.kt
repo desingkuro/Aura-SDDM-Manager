@@ -48,11 +48,11 @@ fun FooterScreen(
                 .background(
                     if (viewModel.selectedFile != null) AuraColors.PrimaryMuted else AuraColors.SurfaceElevated
                 )
-                .pointerHoverIcon(PointerIcon.Hand)
-                .clickable {
-                    if (viewModel.selectedFile != null) {
-                        viewModel.launchSddmPreview()
-                    }
+                .pointerHoverIcon(
+                    if (viewModel.selectedFile != null) PointerIcon.Hand else PointerIcon.Default
+                )
+                .clickable(enabled = viewModel.selectedFile != null) {
+                    viewModel.launchSddmPreview()
                 },
             contentAlignment = Alignment.Center
         ) {
@@ -75,9 +75,11 @@ fun FooterScreen(
                 .background(
                     if (viewModel.selectedFile != null) AuraColors.Danger else AuraColors.SurfaceElevated
                 )
-                .pointerHoverIcon(PointerIcon.Hand)
-                .clickable {
-                    viewModel.toggleViewDialog()
+                .pointerHoverIcon(
+                    if (viewModel.selectedFile != null) PointerIcon.Hand else PointerIcon.Default
+                )
+                .clickable(enabled = viewModel.selectedFile != null) {
+                    viewModel.openDeleteDialog()
                 },
             contentAlignment = Alignment.Center
         ) {
@@ -100,9 +102,15 @@ fun FooterScreen(
                 .background(
                     if (viewModel.selectedFile != null && !viewModel.isApplying) AuraColors.Primary else AuraColors.SurfaceElevated
                 )
-                .pointerHoverIcon(PointerIcon.Hand)
+                .pointerHoverIcon(
+                    if (viewModel.selectedFile != null && !viewModel.isApplying) {
+                        PointerIcon.Hand
+                    } else {
+                        PointerIcon.Default
+                    }
+                )
                 .clickable(enabled = viewModel.selectedFile != null && !viewModel.isApplying) {
-                    viewModel.toggleViewDialogApply()
+                    viewModel.openApplyDialog()
                 },
             contentAlignment = Alignment.Center
         ) {
