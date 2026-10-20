@@ -68,6 +68,20 @@ class SddmBackupTest {
     }
 
     @Test
+    fun `ignora respaldos sin manifiesto completo`() {
+        val env = TestEnvironment()
+        try {
+            val incomplete = File(env.backupsDir, "incomplete").apply { mkdirs() }
+            File(incomplete, "theme-config").writeText("config")
+            File(incomplete, "backup.properties.tmp").writeText("version=1")
+
+            assertTrue(env.repository.listBackups().isEmpty())
+        } finally {
+            env.close()
+        }
+    }
+
+    @Test
     fun `rechaza identificadores de respaldo con traversal`() {
         val env = TestEnvironment()
         try {

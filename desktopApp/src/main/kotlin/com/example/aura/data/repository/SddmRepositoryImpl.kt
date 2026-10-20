@@ -5,6 +5,7 @@ import com.example.aura.domain.models.RestoreBackupResult
 import com.example.aura.domain.models.SddmBackup
 import com.example.aura.domain.repository.SddmRepository
 import java.io.File
+import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.time.Instant
@@ -285,8 +286,25 @@ class SddmRepositoryImpl(
                 setProperty("target_background_existed", targetExisted.toString())
                 setProperty("current_bg_existed", appliedBackgroundFile.isFile.toString())
             }
-            File(backupDir, backupManifestName).outputStream().use { output ->
+            // El manifiesto se publica con un movimiento atómico: hasta que existe,
+            // la carpeta se considera incompleta y se ignora al listar respaldos.
+            val manifestFile = File(backupDir, backupManifestName)
+            val temporaryManifest = File(backupDir, "$backupManifestName.tmp")
+            temporaryManifest.outputStream().use { output ->
                 manifest.store(output, "Aura SDDM backup")
+            }
+            try {
+                Files.move(
+                    temporaryManifest.toPath(),
+                    manifestFile.toPath(),
+                    StandardCopyOption.ATOMIC_MOVE,
+                )
+            } catch (e: AtomicMoveNotSupportedException) {
+                Files.move(
+                    temporaryManifest.toPath(),
+                    manifestFile.toPath(),
+                    StandardCopyOption.REPLACE_EXISTING,
+                )
             }
 
             return backupDir

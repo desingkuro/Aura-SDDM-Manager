@@ -87,7 +87,7 @@ romper el arranque del login si se hace mal).
   hace falta.
 
 **Estado:** implementado en `SddmRepositoryImpl`, `SettingsViewModel` y
-`SettingsScreen`, con 3 pruebas de respaldo en directorios temporales.
+`SettingsScreen`, con 4 pruebas de respaldo en directorios temporales.
 
 **Esfuerzo:** Medio · **Depende de:** nada.
 

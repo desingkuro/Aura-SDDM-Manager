@@ -1,7 +1,7 @@
 # Estado del proyecto — Aura SDDM Manager
 
 > **Última actualización:** 19 de octubre de 2026
-> **Rama de trabajo:** `dev` · **Commit de código:** `aa91f40`
+> **Rama de trabajo:** `dev` · **Último bloque:** respaldos y restauración.
 > **Sincronización:** `main` y `dev` se actualizan al publicar este bloque.
 > **Build:** `./gradlew build` y `./gradlew :desktopApp:test` → correctos.
 
@@ -33,7 +33,7 @@ respaldo restaurable. La deuda principal ahora es la **escritura atómica**, la
 | Aplicar cambios en SDDM | 🟢 Funcional, 🟢 con respaldo/restauración |
 | Previsualización | 🟢 Funcional |
 | Ajustes | 🟡 Respaldos implementados; diagnóstico, tema y apariencia pendientes |
-| Pruebas automatizadas | 🟡 3 pruebas de respaldo; falta cobertura amplia |
+| Pruebas automatizadas | 🟡 4 pruebas de respaldo; falta cobertura amplia |
 | Empaquetado / distribución | 🟡 Configurado, no verificado |
 | Documentación | 🟢 README + `docs/ideas-ajustes.md` + este archivo |
 
@@ -64,7 +64,7 @@ respaldo restaurable. La deuda principal ahora es la **escritura atómica**, la
 | Pantalla de Ajustes | 🟡 | Lista de respaldos; diagnóstico, tema y apariencia pendientes |
 | Persistencia de preferencias | ❌ | No existe |
 | Respaldo / deshacer cambios | ✅ | Respaldo y restauración; no hay redo |
-| Tests del módulo desktop | 🟡 | 3 pruebas de respaldo con directorios temporales |
+| Tests del módulo desktop | 🟡 | 4 pruebas de respaldo con directorios temporales |
 | Internacionalización | ❌ | Textos en español hardcodeados |
 | Empaquetado probado | 🟡 | `nativeDistributions` configurado, sin verificar |
 
@@ -116,7 +116,7 @@ inyección de dependencias formal.
 | JDK | Toolchain 21 (Azul), descargado por Gradle |
 | Módulos | `:desktopApp` (JVM), `:shared` (KMP, sin uso) |
 | Config cache | Activada (`org.gradle.configuration-cache=true`) |
-| Tests | `desktopApp` (3 de respaldo) + `shared` (triviales) |
+| Tests | `desktopApp` (4 de respaldo) + `shared` (triviales) |
 | Permisos | `pkexec`/PolicyKit con script temporal |
 | Git | `dev` con respaldo/restauración; `main` se actualiza al publicar |
 
@@ -142,7 +142,7 @@ inyección de dependencias formal.
       Implementado con manifiesto, listado y restauración desde Ajustes.
 - [ ] **Cubrir `SddmRepositoryImpl` con pruebas**: detección de tema/fondo,
       reescritura de `ConfigFile` y `theme.conf`, aplicación con nombres con
-      espacios, videos y casos de error. Los respaldos ya tienen 3 pruebas con
+      espacios, videos y casos de error. Los respaldos ya tienen 4 pruebas con
       directorios temporales.
 - [ ] **Mejorar la gestión de permisos y errores de `Aplicar`**:
       - distinguir cancelación de autenticación vs. fallo real,
@@ -347,7 +347,7 @@ y dotfiles.
 ### Corto plazo — v0.2 (estabilizar)
 
 1. [x] Backups + restauración.
-2. Tests de `SddmRepositoryImpl` (los respaldos ya tienen 3 pruebas).
+2. Tests de `SddmRepositoryImpl` (los respaldos ya tienen 4 pruebas).
 3. Gestión de permisos/errores de `Aplicar` (cancelación, `pkexec` ausente).
 4. Selector de destino login/bloqueo/ambos.
 5. Limpieza de código muerto y del módulo `shared`.
@@ -395,7 +395,7 @@ y dotfiles.
 - No detecta fondos definidos únicamente por color.
 - No reinicia SDDM; el usuario debe cerrar sesión o reiniciar el servicio.
 - Ajustes solo incluye respaldos; diagnóstico, tema y apariencia están pendientes.
-- Cobertura inicial de 3 pruebas de respaldo; falta el resto del repositorio.
+- Cobertura inicial de 4 pruebas de respaldo; falta el resto del repositorio.
 
 ---
 
