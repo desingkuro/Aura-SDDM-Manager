@@ -17,10 +17,10 @@ romper el arranque del login si se hace mal).
 
 | # | Idea | Nivel | Impacto | Esfuerzo | Riesgo |
 |---|------|-------|---------|----------|--------|
-| 1 | Aplicar fondo a SDDM (login/bloqueo/ambos) | Imprescindible | Alto | Alto | Alto |
+| 1 | Aplicar fondo a SDDM (login/bloqueo/ambos) ✅ | Imprescindible | Alto | Alto | Alto |
 | 2 | Copia de seguridad y restauración de config SDDM ✅ | Imprescindible | Alto | Medio | Bajo |
-| 3 | Selector de tema SDDM instalado | Imprescindible | Alto | Bajo | Bajo |
-| 4 | Diagnóstico del entorno (dependencias y estado) | Imprescindible | Alto | Bajo | Bajo |
+| 3 | Selector de tema SDDM instalado ✅ | Imprescindible | Alto | Bajo | Bajo |
+| 4 | Diagnóstico del entorno (dependencias y estado) ✅ | Imprescindible | Alto | Bajo | Bajo |
 | 5 | Opciones del tema (relleno, desenfoque, brillo, saturación) | Muy útil | Alto | Medio | Bajo |
 | 6 | Rutas personalizables (temas, conf, greeter, medios) | Muy útil | Medio | Bajo | Medio |
 | 7 | Gestión de almacenamiento y caché | Muy útil | Medio | Bajo | Bajo |
@@ -41,10 +41,10 @@ romper el arranque del login si se hace mal).
 
 ## Nivel 1 — Imprescindibles
 
-### 1. Aplicar el fondo seleccionado a SDDM
+### 1. Aplicar el fondo seleccionado a SDDM ✅
 
 **Qué permite**
-- Botón "Aplicar" funcional (hoy está pendiente en el README).
+- Botón "Aplicar" funcional.
 - Elegir destino: pantalla de **login**, pantalla de **bloqueo** o **ambas**.
 - Escribir el cambio en la configuración correcta del tema activo.
 
@@ -59,6 +59,9 @@ romper el arranque del login si se hace mal).
 - Requiere permisos: `pkexec`/Polkit o elevar para escribir en
   `/usr/share/sddm/themes/...` o `/etc/sddm.conf.d/`.
 - Riesgo alto, aunque la idea 2 (backups) ya está implementada.
+
+**Estado:** implementado en el diálogo de aplicación, con selector de destino y
+pruebas para reescritura selectiva.
 
 **Esfuerzo:** Alto · **Depende de:** idea 2 y 4.
 
@@ -81,56 +84,63 @@ romper el arranque del login si se hace mal).
 - Copia el `ConfigFile` del tema, el fondo de destino si ya existía y
   `current_bg.txt`.
 - `backup.properties` se escribe al final; una carpeta sin manifiesto se ignora.
-- No copia `sddm.conf` porque la aplicación de fondos no lo modifica. Se
-  incluirá cuando exista el selector de tema.
-- La restauración valida que las rutas estén dentro del tema y usa `pkexec` si
-  hace falta.
+- Los cambios de tema crean un respaldo `kind=theme` con `sddm.conf` o
+  `99-aura-theme.conf` y el registro de fondo anterior.
+- La restauración valida que las rutas estén dentro del tema (o de las rutas
+  permitidas para SDDM) y usa `pkexec` si hace falta.
 - La configuración se escribe en un temporal del mismo directorio y se publica
   con `rename` atómico, tanto directamente como mediante `pkexec`.
 
 **Estado:** implementado en `SddmRepositoryImpl`, `SettingsViewModel` y
-`SettingsScreen`, con 5 pruebas de respaldo y escritura atómica en directorios
-temporales.
+`SettingsScreen`, con 36 pruebas de respaldo, escritura atómica, destinos,
+detección y cambio de tema en directorios temporales.
 
 **Esfuerzo:** Medio · **Depende de:** nada.
 
 ---
 
-### 3. Selector de tema SDDM instalado
+### 3. Selector de tema SDDM instalado ✅
 
 **Qué permite**
 - Listar temas detectados en `/usr/share/sddm/themes`.
-- Mostrar cuál es el `Current` real y permitir previsualizar/aplicar sobre otro.
+- Mostrar cuál es el `Current` real y cambiar a otro tema con respaldo previo.
 - Indicar el tipo de tema detectado (tradicional con `theme.conf` o por
   `metadata.desktop`/`ConfigFile`).
 
 **Para qué sirve**
-- Hoy la app asume "el tema actual". Si el usuario tiene varios temas, no puede
-  elegir ni entender por qué una opción aplica a uno y no a otro.
+- Si el usuario tiene varios temas, puede elegir y entender por qué una opción
+  aplica a uno y no a otro.
 
 **Notas técnicas**
-- Reutiliza `getCurrentTheme()` y amplía el repositorio SDDM con
-  `listThemes()`.
+- Ya existen `getCurrentTheme()` y `getInstalledThemes()`.
+- El cambio escribe `99-aura-theme.conf` (o `sddm.conf`) y verifica el tema
+  efectivo.
 - Puede incluir la miniatura del tema (`Screenshot=` en `metadata.desktop`).
+
+**Estado:** implementado en Ajustes, con respaldo de tema restaurable.
 
 **Esfuerzo:** Bajo · **Depende de:** nada.
 
 ---
 
-### 4. Diagnóstico del entorno (dependencias y estado)
+### 4. Diagnóstico del entorno (dependencias y estado) ✅
 
 **Qué permite**
-- Ver en verde/rojo: `ffmpeg`, `sddm-greeter`, `pkexec`/Polkit, permisos de
-  escritura, ruta de temas, ruta de configuración, tema actual.
-- Sugerir el comando de instalación cuando falte algo.
+- Ver en verde/amarillo/rojo: `ffmpeg`, `sddm-greeter`, `pkexec`/Polkit,
+  permisos de escritura, ruta de temas, ruta de configuración, tema actual y
+  carpeta de respaldos.
+- Mostrar una pista cuando falta algo.
 
 **Para qué sirve**
 - Evita el clásico "no funciona y no sé por qué". Centraliza los errores que hoy
   salen como diálogos sueltos o solo en consola.
 
 **Notas técnicas**
-- Ya existen `getGreeterPath()` y detección de tema: extenderlos.
-- Comprobar `command -v ffmpeg`, `command -v pkexec`, etc.
+- Implementado con `getDiagnostics()`, `ProcessHandle` para detectar el agente
+  Polkit y búsqueda en `PATH` para `ffmpeg`.
+- Ya existen `getGreeterPath()` y detección de tema.
+
+**Estado:** implementado en la tarjeta "Diagnóstico" de Ajustes.
 
 **Esfuerzo:** Bajo · **Recomendado como primera pantalla visible de ajustes.**
 

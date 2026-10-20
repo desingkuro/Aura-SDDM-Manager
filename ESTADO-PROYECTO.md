@@ -1,10 +1,11 @@
 # Estado del proyecto — Aura SDDM Manager
 
 > **Última actualización:** 19 de octubre de 2026
-> **Rama de trabajo:** `dev` · **Último bloque:** respaldos, restauración y
-> escritura atómica.
+> **Rama de trabajo:** `dev` · **Último bloque:** pruebas, selector de destino,
+> permisos/errores y Ajustes con diagnóstico + selector de tema.
 > **Sincronización:** `main` y `dev` se actualizan al publicar este bloque.
-> **Build:** `./gradlew build` y `./gradlew :desktopApp:test` → correctos.
+> **Build:** `./gradlew build` y `./gradlew :desktopApp:test` → correctos
+> (36 pruebas, 0 fallos).
 
 Este documento resume el estado real del proyecto, lo que falta, los puntos de
 mejora y un listado priorizado de ideas para seguir creciendo. Es un documento
@@ -17,14 +18,16 @@ vivo: conviene actualizarlo al cerrar cada bloque de trabajo.
 Aura es un **MVP funcional** de escritorio para gestionar el fondo de la pantalla
 de inicio de **SDDM** en Linux. Hoy permite importar imágenes y videos, verlos en
 una galería, previsualizar el tema real y **aplicar** el fondo seleccionado al
-tema SDDM activo, incluyendo videos animados.
+tema SDDM activo, eligiendo **login, bloqueo o ambos**, incluyendo videos
+animados. Ajustes ya incluye respaldos restaurables, diagnóstico del entorno y
+selector de tema.
 
 El proyecto es estable a nivel de compilación y de flujo manual: importar →
-seleccionar → previsualizar → aplicar funciona, cada aplicación deja un
-respaldo restaurable y la configuración se publica de forma atómica. La deuda
-principal ahora es la **cobertura de pruebas**, la **gestión de permisos y
-errores**, la **transaccionalidad entre configuración y fondo**, y completar la
-**vista de Ajustes** (diagnóstico, selector de tema y apariencia).
+seleccionar → previsualizar → aplicar funciona, cada operación deja un respaldo
+restaurable y la configuración se publica de forma atómica. La deuda principal
+ahora es la **transaccionalidad entre configuración y fondo**, la conservación
+de **permisos/propietario**, la **apariencia del tema** y la cobertura del flujo
+`pkexec` con dobles de prueba.
 
 **Semáforo general**
 
@@ -32,10 +35,10 @@ errores**, la **transaccionalidad entre configuración y fondo**, y completar la
 |------|--------|
 | Compilación | 🟢 Estable |
 | Flujo principal (imagen/video) | 🟢 Funcional |
-| Aplicar cambios en SDDM | 🟢 Funcional, 🟢 con respaldo/restauración |
+| Aplicar cambios en SDDM | 🟢 Funcional, con destino y respaldo/restauración |
 | Previsualización | 🟢 Funcional |
-| Ajustes | 🟡 Respaldos implementados; diagnóstico, tema y apariencia pendientes |
-| Pruebas automatizadas | 🟡 5 pruebas de respaldo/escritura; falta cobertura amplia |
+| Ajustes | 🟢 Respaldos, diagnóstico y selector de tema; apariencia pendiente |
+| Pruebas automatizadas | 🟢 36 pruebas del repositorio; falta automatizar `pkexec` real |
 | Empaquetado / distribución | 🟡 Configurado, no verificado |
 | Documentación | 🟢 README + `docs/ideas-ajustes.md` + este archivo |
 
@@ -58,15 +61,21 @@ errores**, la **transaccionalidad entre configuración y fondo**, y completar la
 | Previsualizar con `sddm-greeter` | ✅ | Tema temporal en `/tmp`, se borra al cerrar |
 | Aplicar fondo (imagen) | ✅ | Copia a `backgrounds/` y reescribe config |
 | Aplicar fondo (video animado) | ✅ | Mismo flujo; el tema anima según la extensión |
+| Elegir destino al aplicar | ✅ | Login, bloqueo o ambos; temas tradicionales solo "Ambos" |
 | Aplicar con permisos | ✅ | `pkexec` si el tema es del sistema; escritura directa si no |
 | Confirmación y resultado al aplicar | ✅ | Diálogos de confirmación, "Aplicando...", éxito/error |
 | Respaldo automático antes de aplicar | ✅ | Config del tema, fondo anterior y `current_bg.txt` |
-| Restauración de respaldos | ✅ | Lista en Ajustes, confirmación y `pkexec` si hace falta |
+| Restauración de respaldos de fondo | ✅ | Lista en Ajustes, confirmación y `pkexec` si hace falta |
+| Selector de tema instalado | ✅ | Lista `/usr/share/sddm/themes` y marca el tema actual |
+| Cambio de tema con respaldo | ✅ | `99-aura-theme.conf` + respaldo restaurable |
+| Restauración de respaldos de tema | ✅ | Recupera la configuración de SDDM y el registro de fondo |
+| Diagnóstico del entorno | ✅ | Tema, rutas, permisos, greeter, pkexec, Polkit, ffmpeg |
+| Acciones sin selección | ✅ | Previsualizar/Eliminar/Aplicar deshabilitados |
 | Barra lateral responsive | ✅ | Paneles con `weight`, nombres largos con elipsis |
-| Pantalla de Ajustes | 🟡 | Lista de respaldos; diagnóstico, tema y apariencia pendientes |
+| Pantalla de Ajustes | 🟢 | Diagnóstico, tema y respaldos; apariencia pendiente |
 | Persistencia de preferencias | ❌ | No existe |
 | Respaldo / deshacer cambios | ✅ | Respaldo y restauración; no hay redo |
-| Tests del módulo desktop | 🟡 | 5 pruebas de respaldo/escritura con directorios temporales |
+| Tests del módulo desktop | 🟢 | 36 pruebas con directorios temporales |
 | Internacionalización | ❌ | Textos en español hardcodeados |
 | Empaquetado probado | 🟡 | `nativeDistributions` configurado, sin verificar |
 
@@ -80,10 +89,11 @@ Aura/
 │       │   ├── local/           # StorageManager (carpeta de medios)
 │       │   └── repository/      # MediaRepositoryImple, SddmRepositoryImpl
 │       ├── domain/
-│       │   ├── models/          # ApplyBackgroundResult, SddmBackup, RestoreBackupResult
+│       │   ├── models/          # Resultados, BackgroundDestination, SddmTheme,
+│       │   │                    # SddmDiagnostics, SddmBackup…
 │       │   └── repository/      # MediaRepository, SddmRepository
 │       ├── presentation/
-│       │   ├── ui/components/   # Sidebar, MainScreen, Footer, diálogos…
+│       │   ├── ui/components/   # Sidebar, MainScreen, Footer, Destino, diálogos…
 │       │   ├── ui/screens/      # MediaScreen, SettingsScreen
 │       │   ├── ui/theme/        # AuraColors
 │       │   ├── utils/           # FilePicker, conversión de miniaturas
@@ -100,13 +110,28 @@ inyección de dependencias formal.
 
 **Flujo de aplicación de fondo**
 
-1. `FooterScreen` → `MediaViewModel.applySelectedBackground()`
-2. `SddmRepositoryImpl.applyBackground(file)`
+1. `FooterScreen` → diálogo de confirmación con `DestinationSelector`.
+2. `MediaViewModel.applySelectedBackground()` captura el destino y llama a
+   `SddmRepositoryImpl.applyBackground(file, destination)`.
 3. Detecta tema y archivo de configuración (`metadata.desktop` → `ConfigFile`, o `theme.conf`).
-4. Crea un respaldo en `~/.local/share/Aura/backups/<fecha>-<tema>/`.
-5. Reescribe la configuración para `LoginScreen` y `LockScreen`.
-6. Copia el archivo a `backgrounds/` y aplica con `pkexec` si hace falta.
-7. Guarda la ruta en `~/.local/share/Aura/current_bg.txt` y devuelve un resultado tipado.
+4. Comprueba permisos; si el tema está protegido y falta `pkexec`, aborta antes
+   de crear un respaldo.
+5. Crea un respaldo en `~/.local/share/Aura/backups/<fecha>-<tema>/`.
+6. Reescribe solo las pantallas elegidas (`LoginScreen`, `LockScreen` o ambas).
+7. Copia el archivo a `backgrounds/` y aplica con `pkexec` si hace falta.
+8. Guarda la ruta en `~/.local/share/Aura/current_bg.txt` y devuelve un resultado tipado.
+
+**Flujo de cambio de tema**
+
+1. `SettingsScreen` lista los temas instalados y marca el actual.
+2. Al confirmar, `SddmRepositoryImpl.changeTheme()` crea un respaldo del tema y
+   de `current_bg.txt`.
+3. Escribe `[Theme] Current` en `/etc/sddm.conf.d/99-aura-theme.conf` (o en
+   `/etc/sddm.conf` si no existe el directorio) con temporal + `rename`.
+4. Verifica que el tema efectivo cambió; si otro archivo tiene prioridad,
+   devuelve un error explicativo.
+5. Limpia el registro de fondo del tema anterior. El respaldo permite volver al
+   tema previo desde Ajustes.
 
 ### 2.3 Estado técnico
 
@@ -118,7 +143,7 @@ inyección de dependencias formal.
 | JDK | Toolchain 21 (Azul), descargado por Gradle |
 | Módulos | `:desktopApp` (JVM), `:shared` (KMP, sin uso) |
 | Config cache | Activada (`org.gradle.configuration-cache=true`) |
-| Tests | `desktopApp` (5 de respaldo/escritura) + `shared` (triviales) |
+| Tests | `desktopApp` (36: respaldos, reescritura, destinos, temas, pkexec) + `shared` (triviales) |
 | Permisos | `pkexec`/PolicyKit con script temporal |
 | Git | `dev` con respaldo/restauración; `main` se actualiza al publicar |
 
@@ -134,6 +159,11 @@ inyección de dependencias formal.
 - La configuración se publica con temporal + `rename` atómico. El fondo se copia
   antes y la configuración se activa al final, pero el conjunto config+fondo
   todavía no es una operación transaccional.
+- El cambio de tema usa el nombre fijo `99-aura-theme.conf`; si otra distro
+  tiene un drop-in posterior, `changeTheme` devuelve error en lugar de asumir
+  éxito, pero convendría elegir dinámicamente el orden.
+- Los métodos de diagnóstico y detección de procesos usan `ProcessHandle`; en
+  sesiones muy restringidas puede no detectar el agente Polkit.
 
 ---
 
@@ -143,33 +173,40 @@ inyección de dependencias formal.
 
 - [x] **Respaldo y restauración de la configuración de SDDM** antes de aplicar.
       Implementado con manifiesto, listado y restauración desde Ajustes.
-- [ ] **Cubrir `SddmRepositoryImpl` con pruebas**: detección de tema/fondo,
-      reescritura de `ConfigFile` y `theme.conf`, aplicación con nombres con
-      espacios, videos y casos de error. Los respaldos y la escritura atómica ya
-      tienen 5 pruebas con directorios temporales.
-- [ ] **Mejorar la gestión de permisos y errores de `Aplicar`**:
-      - distinguir cancelación de autenticación vs. fallo real,
-      - avisar si no hay agente Polkit o `pkexec`,
-      - evitar estados intermedios si falla a mitad de la operación.
-- [ ] **Vista de Ajustes funcional** (hoy incluye respaldos; faltan diagnóstico,
-      selector de tema y apariencia): ver `docs/ideas-ajustes.md`.
-- [ ] **Proteger acciones sin selección**: el botón Eliminar abre el diálogo
-      incluso sin archivo seleccionado y muestra `'null'`.
-- [ ] **Elegir destino al aplicar**: login, bloqueo o ambos (hoy aplica a ambos).
+- [x] **Cubrir `SddmRepositoryImpl` con pruebas**: detección de tema/fondo,
+      reescritura de `ConfigFile` y `theme.conf`, destinos, nombres con espacios,
+      videos, errores, respaldos y cambio de tema. 36 pruebas con directorios
+      temporales.
+- [x] **Mejorar la gestión de permisos y errores de `Aplicar`**:
+      - distingue cancelación de autenticación (126), autorización denegada (127)
+        y fallo de PolicyKit (125),
+      - avisa si faltan `pkexec` o el agente Polkit,
+      - detecta temas protegidos antes de crear el respaldo.
+- [x] **Vista de Ajustes funcional**: respaldos, diagnóstico y selector de tema.
+      Falta apariencia del tema.
+- [x] **Proteger acciones sin selección**: Previsualizar/Eliminar/Aplicar se
+      deshabilitan y el diálogo ya no muestra `'null'`.
+- [x] **Elegir destino al aplicar**: login, bloqueo o ambos. En temas
+      tradicionales el selector se limita a "Ambos".
 - [x] **Escritura atómica de configuración**: temporal en el mismo directorio +
       `rename`, tanto en escritura directa como con `pkexec`, y respeto de
       symlinks. El fondo se copia antes y la configuración se activa al final.
+- [x] **Selector de tema con respaldo restaurable**: `/etc/sddm.conf.d/99-aura-theme.conf`
+      o `/etc/sddm.conf`, con verificación del tema efectivo.
+- [ ] **Hacer transaccional la operación config+fondo** y conservar
+      permisos/propietario originales.
 - [ ] **Limpiar código muerto y restos de plantilla**: `shared/`, `current_bg.txt`
       versionado, métodos sin uso.
 
 ### 3.2 Prioridad media
 
-- [ ] **Selector de tema SDDM** instalado (listar `/usr/share/sddm/themes`).
-- [ ] **Diagnóstico del entorno** en Ajustes: `ffmpeg`, `sddm-greeter`, `pkexec`,
+- [x] **Selector de tema SDDM** instalado (listar `/usr/share/sddm/themes`).
+- [x] **Diagnóstico del entorno** en Ajustes: `ffmpeg`, `sddm-greeter`, `pkexec`,
       permisos, rutas y tema actual.
 - [ ] **Caché de miniaturas de video** en disco (hoy se regeneran).
-- [ ] **Comprobar dependencias antes de usar**: `ffmpeg` y `sddm-greeter`
-      ausentes deberían mostrar un mensaje claro, no fallar en silencio.
+- [ ] **Usar el diagnóstico antes de cada flujo**: hoy avisa en Ajustes, pero
+      `ffmpeg` y `sddm-greeter` ausentes aún fallan en silencio en la galería o
+      la previsualización.
 - [ ] **Reiniciar SDDM / aplicar y probar** desde la app, con confirmación fuerte.
 - [ ] **Soporte de fondos definidos solo por color** (hoy se detectan como vacío).
 - [ ] **Manejo de temas sin carpeta `backgrounds/`** y de temas tradicionales
@@ -202,10 +239,14 @@ inyección de dependencias formal.
 3. **Modelo de privilegios más estricto**: hoy se ejecuta con `pkexec` un script
    temporal propiedad del usuario. Funciona, pero conviene evaluar un *helper*
    Polkit dedicado o `pkexec` con argumentos acotados.
-4. **Validación de rutas y nombres**: comprobar que el destino está dentro del
-   tema y evitar colisiones con archivos reservados (`default.jpg`, etc.).
+4. **Validación de rutas y nombres**: el respaldo de tema solo permite
+   `/etc/sddm.conf` o `99-aura-theme.conf`; el respaldo de fondo valida que las
+   rutas estén dentro del tema. Evitar colisiones con archivos reservados
+   (`default.jpg`, etc.) sigue pendiente.
 5. **Restaurar permisos/propietario** originales del archivo de configuración.
-6. **Registrar qué se cambió** (archivo, tema, fecha) para poder deshacer.
+6. **Registrar qué se cambió**: los respaldos de fondo y de tema ya guardan
+   fecha, tema, rutas y banderas en `backup.properties`. Falta un historial
+   legible de operaciones.
 
 ### 4.2 Arquitectura y código
 
@@ -281,9 +322,9 @@ Esfuerzo estimado: **B** bajo · **M** medio · **A** alto.
 | # | Idea | Valor | Esfuerzo | Prioridad |
 |---|------|-------|----------|-----------|
 | 1 | Respaldo y restauración de configuración SDDM ✅ | Evita romper el login | B | **P0** |
-| 2 | Selector de pantalla destino (login / bloqueo / ambos) | Control real del cambio | B | **P0** |
-| 3 | Selector de tema SDDM instalado | Trabajar con varios temas | B | **P0** |
-| 4 | Diagnóstico del entorno y dependencias | Menos soporte y errores | B | **P1** |
+| 2 | Selector de pantalla destino (login / bloqueo / ambos) ✅ | Control real del cambio | B | **P0** |
+| 3 | Selector de tema SDDM instalado ✅ | Trabajar con varios temas | B | **P0** |
+| 4 | Diagnóstico del entorno y dependencias ✅ | Menos soporte y errores | B | **P1** |
 | 5 | Opciones de apariencia (relleno, blur, brillo, saturación) | Personalización real | M | **P1** |
 | 6 | Placeholder del video (primer frame con `ffmpeg`) | Evita fondo negro al cargar | B | **P1** |
 | 7 | Reiniciar SDDM / aplicar y probar | Ver el resultado sin reiniciar a mano | B | **P1** |
@@ -317,16 +358,21 @@ Cada aplicación crea `~/.local/share/Aura/backups/<fecha>-<tema>/` con el
 `ConfigFile` del tema, el fondo de destino si ya existía y `current_bg.txt`. Un
 manifiesto escrito al final registra las rutas. La restauración está en Ajustes
 Avanzados, pide confirmación y usa `pkexec` si el tema pertenece al sistema.
-No se copia `sddm.conf` porque `applyBackground` no lo modifica; incluirlo
-implicaría restaurar configuración global ajena a la operación.
+Los cambios de tema crean un respaldo distinto (`kind=theme`) que guarda
+`sddm.conf` o `99-aura-theme.conf` y permite volver al tema anterior.
 
-**2. Destino del fondo**
-Permitir aplicar solo al login, solo al bloqueo o a ambos. En SilentSDDM son
-`[LoginScreen] background` y `[LockScreen] background`.
+**2. Destino del fondo — implementado**
+El diálogo de aplicación permite elegir login, bloqueo o ambos. En SilentSDDM
+se reescriben `[LoginScreen] background` y `[LockScreen] background` de forma
+selectiva; los temas con `theme.conf` solo admiten "Ambos".
 
-**3. Selector de tema**
-Listar `/usr/share/sddm/themes`, mostrar el `Current` real y permitir
-previsualizar/aplicar sobre otro tema.
+**3. Selector de tema — implementado**
+Ajustes lista `/usr/share/sddm/themes`, marca el `Current` real, permite cambiar
+de tema con respaldo previo y verifica que SDDM lea el tema nuevo.
+
+**4. Diagnóstico — implementado**
+Ajustes comprueba tema actual, configuración del tema, rutas, permisos,
+`sddm-greeter`, `pkexec`, agente Polkit, `ffmpeg` y carpeta de respaldos.
 
 **6. Placeholder de video**
 Extraer el primer frame con `ffmpeg` y escribirlo en
@@ -352,20 +398,20 @@ y dotfiles.
 ### Corto plazo — v0.2 (estabilizar)
 
 1. [x] Backups + restauración.
-2. Tests de `SddmRepositoryImpl` (respaldos y escritura atómica ya tienen 5 pruebas).
-3. Gestión de permisos/errores de `Aplicar` (cancelación, `pkexec` ausente).
-4. Selector de destino login/bloqueo/ambos.
-5. Limpieza de código muerto y del módulo `shared`.
-6. Arreglar el diálogo de eliminar sin selección.
+2. [x] Tests de `SddmRepositoryImpl` (36 pruebas).
+3. [x] Gestión de permisos/errores de `Aplicar` (cancelación, `pkexec` ausente).
+4. [x] Selector de destino login/bloqueo/ambos.
+5. [ ] Limpieza de código muerto y del módulo `shared`.
+6. [x] Arreglar el diálogo de eliminar sin selección.
 
 ### Medio plazo — v0.3 (personalización)
 
-1. Vista de Ajustes con diagnóstico, tema y rutas.
-2. Opciones de apariencia (relleno, blur, brillo, saturación).
-3. Selector de tema.
-4. Caché de miniaturas y gestión de almacenamiento.
-5. Placeholder de video y previsualización de video.
-6. Presets/perfiles.
+1. [x] Vista de Ajustes con diagnóstico, tema y respaldos.
+2. [ ] Opciones de apariencia (relleno, blur, brillo, saturación).
+3. [ ] Rutas configurables (temas, conf, greeter, medios).
+4. [ ] Caché de miniaturas y gestión de almacenamiento.
+5. [ ] Placeholder de video y previsualización de video.
+6. [ ] Presets/perfiles.
 
 ### Largo plazo — v1.0 (producto)
 
@@ -382,8 +428,9 @@ y dotfiles.
 | Riesgo | Impacto | Mitigación |
 |--------|---------|------------|
 | Un cambio mal aplicado rompe el login | Alto | Backups + restauración + validación |
-| `pkexec` cancelado o sin agente Polkit | Medio | Mensajes claros y reintento |
-| Diferencias entre temas/distros | Medio | Rutas configurables y detección robusta |
+| `pkexec` cancelado o sin agente Polkit | Medio | Mensajes diferenciados (125/126/127), diagnóstico y reintento |
+| Diferencias entre temas/distros | Medio | Rutas configurables (pendiente) y detección robusta |
+| Otro drop-in de SDDM con más prioridad | Medio | `changeTheme` verifica el tema efectivo y avisa del conflicto |
 | Videos con códecs no soportados | Medio | Validación/transcodificación |
 | GIF como fondo | Alto (puede crashear SDDM) | Bloquear o convertir a video/imagen |
 | Config a medio escribir | Bajo | Temporal + `rename` atómico (implementado) |
@@ -394,14 +441,15 @@ y dotfiles.
 
 **Limitaciones funcionales actuales**
 
-- Solo gestiona el tema SDDM activo; no hay selector de tema.
-- Aplica siempre a login y bloqueo a la vez.
+- Ajustes cubre respaldos, diagnóstico y cambio de tema; faltan las opciones de
+  apariencia y las rutas configurables.
 - Hay respaldo, restauración y escritura atómica de configuración; faltan redo y
   transaccionalidad entre configuración y fondo.
+- No se conservan permisos/propietario originales al reemplazar la configuración.
 - No detecta fondos definidos únicamente por color.
 - No reinicia SDDM; el usuario debe cerrar sesión o reiniciar el servicio.
-- Ajustes solo incluye respaldos; diagnóstico, tema y apariencia están pendientes.
-- Cobertura inicial de 5 pruebas de respaldo/escritura; falta el resto del repositorio.
+- La cobertura es de 36 pruebas del repositorio; el flujo real con `pkexec`
+  interactivo aún no se automatiza.
 
 ---
 
