@@ -5,7 +5,6 @@ import com.example.aura.domain.models.RestoreBackupResult
 import org.junit.Test
 import java.io.File
 import java.nio.file.Files
-import java.nio.file.attribute.PosixFilePermissions
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
@@ -14,7 +13,7 @@ class SddmBackupTest {
 
     @Test
     fun `crea respaldo antes de aplicar y restaura el estado anterior`() {
-        val env = TestEnvironment()
+        val env = SddmTestEnvironment()
         try {
             env.source.writeText("new-bytes")
 
@@ -50,7 +49,7 @@ class SddmBackupTest {
 
     @Test
     fun `restaura los bytes del fondo cuando el archivo ya existia`() {
-        val env = TestEnvironment()
+        val env = SddmTestEnvironment()
         try {
             val replacement = File(env.root, "old.jpg").apply { writeText("new-bytes") }
 
@@ -77,7 +76,7 @@ class SddmBackupTest {
 
     @Test
     fun `respeta un symlink en la configuracion al escribir`() {
-        val env = TestEnvironment()
+        val env = SddmTestEnvironment()
         try {
             val realConfig = File(env.themeConfig.parentFile, "real.conf")
             Files.move(env.themeConfig.toPath(), realConfig.toPath())
@@ -97,7 +96,7 @@ class SddmBackupTest {
 
     @Test
     fun `ignora respaldos sin manifiesto completo`() {
-        val env = TestEnvironment()
+        val env = SddmTestEnvironment()
         try {
             val incomplete = File(env.backupsDir, "incomplete").apply { mkdirs() }
             File(incomplete, "theme-config").writeText("config")
@@ -111,7 +110,7 @@ class SddmBackupTest {
 
     @Test
     fun `rechaza identificadores de respaldo con traversal`() {
-        val env = TestEnvironment()
+        val env = SddmTestEnvironment()
         try {
             val result = env.repository.restoreBackup("../etc")
             assertTrue(result is RestoreBackupResult.Failure)
@@ -121,66 +120,3 @@ class SddmBackupTest {
     }
 }
 
-private class TestEnvironment {
-    val root: File = Files.createTempDirectory("aura-backup-test-").toFile()
-    val themesDir: File = File(root, "themes").apply { mkdirs() }
-    val themeDir: File = File(themesDir, "silent").apply { mkdirs() }
-    val themeConfig: File = File(themeDir, "configs/default.conf")
-    val backgroundsDir: File = File(themeDir, "backgrounds").apply { mkdirs() }
-    val oldBackground: File = File(backgroundsDir, "old.jpg").apply { writeText("old-bytes") }
-    val currentBg: File = File(root, "current_bg.txt").apply { writeText(oldBackground.absolutePath) }
-    val backupsDir: File = File(root, "backups")
-    val source: File = File(root, "source.jpg")
-    val repository: SddmRepositoryImpl
-
-    init {
-        File(themeDir, "metadata.desktop").writeText(
-            """
-            [SddmGreeterTheme]
-            Name=Silent
-            ConfigFile=configs/default.conf
-            """.trimIndent()
-        )
-        themeConfig.parentFile.mkdirs()
-        themeConfig.writeText(
-            """
-            [LoginScreen]
-            background = "old.jpg"
-            use-background-color = false
-
-            [LockScreen]
-            background = "old.jpg"
-            use-background-color = false
-            """.trimIndent()
-        )
-
-        val sddmConf = File(root, "sddm.conf").apply {
-            writeText("[Theme]\nCurrent=silent\n")
-        }
-        val sddmConfDir = File(root, "sddm.conf.d").apply { mkdirs() }
-
-        repository = SddmRepositoryImpl(
-            appliedBackgroundFile = currentBg,
-            themesDir = themesDir,
-            sddmConfFile = sddmConf,
-            sddmConfDir = sddmConfDir,
-            backupsDir = backupsDir,
-        )
-    }
-
-    fun assertNoAtomicTemps() {
-        val leftovers = themeConfig.parentFile.listFiles()
-            ?.filter { it.name.startsWith(".${themeConfig.name}.aura-") }
-            .orEmpty()
-        assertTrue(leftovers.isEmpty(), "Temporales sin limpiar: ${leftovers.map { it.name }}")
-    }
-
-    fun assertConfigPermissions() {
-        val permissions = Files.getPosixFilePermissions(themeConfig.toPath())
-        assertEquals("rw-r--r--", PosixFilePermissions.toString(permissions))
-    }
-
-    fun close() {
-        root.deleteRecursively()
-    }
-}
