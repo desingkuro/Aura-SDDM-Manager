@@ -1,9 +1,9 @@
 # Estado del proyecto — Aura SDDM Manager
 
 > **Última actualización:** 19 de octubre de 2026
-> **Rama de trabajo:** `dev` · **Commit:** `ec0f42d`
-> **Sincronización:** `main` y `dev` apuntan a `ec0f42d` y están al día con `origin`.
-> **Build:** `./gradlew build` → `BUILD SUCCESSFUL`.
+> **Rama de trabajo:** `dev` · **Commit de código:** `aa91f40`
+> **Sincronización:** `main` y `dev` se actualizan al publicar este bloque.
+> **Build:** `./gradlew build` y `./gradlew :desktopApp:test` → correctos.
 
 Este documento resume el estado real del proyecto, lo que falta, los puntos de
 mejora y un listado priorizado de ideas para seguir creciendo. Es un documento
@@ -19,10 +19,10 @@ una galería, previsualizar el tema real y **aplicar** el fondo seleccionado al
 tema SDDM activo, incluyendo videos animados.
 
 El proyecto es estable a nivel de compilación y de flujo manual: importar →
-seleccionar → previsualizar → aplicar funciona. La deuda principal no es de
-funcionalidad sino de **seguridad de los cambios** (no hay respaldo/deshacer),
-**cobertura de pruebas**, **gestión de permisos y errores**, y una **vista de
-ajustes todavía vacía**.
+seleccionar → previsualizar → aplicar funciona, y cada aplicación deja un
+respaldo restaurable. La deuda principal ahora es la **escritura atómica**, la
+**cobertura de pruebas**, la **gestión de permisos y errores**, y completar la
+**vista de Ajustes** (diagnóstico, selector de tema y apariencia).
 
 **Semáforo general**
 
@@ -30,10 +30,10 @@ ajustes todavía vacía**.
 |------|--------|
 | Compilación | 🟢 Estable |
 | Flujo principal (imagen/video) | 🟢 Funcional |
-| Aplicar cambios en SDDM | 🟢 Funcional, 🟡 sin respaldo/undo |
+| Aplicar cambios en SDDM | 🟢 Funcional, 🟢 con respaldo/restauración |
 | Previsualización | 🟢 Funcional |
-| Ajustes | 🔴 Solo vista base, sin funcionalidad |
-| Pruebas automatizadas | 🔴 Sin cobertura del módulo desktop |
+| Ajustes | 🟡 Respaldos implementados; diagnóstico, tema y apariencia pendientes |
+| Pruebas automatizadas | 🟡 3 pruebas de respaldo; falta cobertura amplia |
 | Empaquetado / distribución | 🟡 Configurado, no verificado |
 | Documentación | 🟢 README + `docs/ideas-ajustes.md` + este archivo |
 
@@ -58,11 +58,13 @@ ajustes todavía vacía**.
 | Aplicar fondo (video animado) | ✅ | Mismo flujo; el tema anima según la extensión |
 | Aplicar con permisos | ✅ | `pkexec` si el tema es del sistema; escritura directa si no |
 | Confirmación y resultado al aplicar | ✅ | Diálogos de confirmación, "Aplicando...", éxito/error |
+| Respaldo automático antes de aplicar | ✅ | Config del tema, fondo anterior y `current_bg.txt` |
+| Restauración de respaldos | ✅ | Lista en Ajustes, confirmación y `pkexec` si hace falta |
 | Barra lateral responsive | ✅ | Paneles con `weight`, nombres largos con elipsis |
-| Pantalla de Ajustes | 🟡 | Vista base con header; contenido pendiente |
+| Pantalla de Ajustes | 🟡 | Lista de respaldos; diagnóstico, tema y apariencia pendientes |
 | Persistencia de preferencias | ❌ | No existe |
-| Respaldo / deshacer cambios | ❌ | No existe |
-| Tests del módulo desktop | ❌ | No hay source set de test |
+| Respaldo / deshacer cambios | ✅ | Respaldo y restauración; no hay redo |
+| Tests del módulo desktop | 🟡 | 3 pruebas de respaldo con directorios temporales |
 | Internacionalización | ❌ | Textos en español hardcodeados |
 | Empaquetado probado | 🟡 | `nativeDistributions` configurado, sin verificar |
 
@@ -76,14 +78,14 @@ Aura/
 │       │   ├── local/           # StorageManager (carpeta de medios)
 │       │   └── repository/      # MediaRepositoryImple, SddmRepositoryImpl
 │       ├── domain/
-│       │   ├── models/          # ApplyBackgroundResult, Card (sin uso)
+│       │   ├── models/          # ApplyBackgroundResult, SddmBackup, RestoreBackupResult
 │       │   └── repository/      # MediaRepository, SddmRepository
 │       ├── presentation/
 │       │   ├── ui/components/   # Sidebar, MainScreen, Footer, diálogos…
 │       │   ├── ui/screens/      # MediaScreen, SettingsScreen
 │       │   ├── ui/theme/        # AuraColors
 │       │   ├── utils/           # FilePicker, conversión de miniaturas
-│       │   └── viewmodels/      # MediaViewModel, Navigations
+│       │   └── viewmodels/      # MediaViewModel, SettingsViewModel, Navigations
 │       └── main.kt              # Ventana principal
 ├── shared/                      # Plantilla KMP heredada (sin uso)
 ├── docs/ideas-ajustes.md        # Ideas específicas para Ajustes
@@ -99,9 +101,10 @@ inyección de dependencias formal.
 1. `FooterScreen` → `MediaViewModel.applySelectedBackground()`
 2. `SddmRepositoryImpl.applyBackground(file)`
 3. Detecta tema y archivo de configuración (`metadata.desktop` → `ConfigFile`, o `theme.conf`).
-4. Reescribe la configuración para `LoginScreen` y `LockScreen`.
-5. Copia el archivo a `backgrounds/` y aplica con `pkexec` si hace falta.
-6. Guarda la ruta en `~/.local/share/Aura/current_bg.txt` y devuelve un resultado tipado.
+4. Crea un respaldo en `~/.local/share/Aura/backups/<fecha>-<tema>/`.
+5. Reescribe la configuración para `LoginScreen` y `LockScreen`.
+6. Copia el archivo a `backgrounds/` y aplica con `pkexec` si hace falta.
+7. Guarda la ruta en `~/.local/share/Aura/current_bg.txt` y devuelve un resultado tipado.
 
 ### 2.3 Estado técnico
 
@@ -113,9 +116,9 @@ inyección de dependencias formal.
 | JDK | Toolchain 21 (Azul), descargado por Gradle |
 | Módulos | `:desktopApp` (JVM), `:shared` (KMP, sin uso) |
 | Config cache | Activada (`org.gradle.configuration-cache=true`) |
-| Tests | Solo `shared` (asserts triviales `1 + 2`) |
+| Tests | `desktopApp` (3 de respaldo) + `shared` (triviales) |
 | Permisos | `pkexec`/PolicyKit con script temporal |
-| Git | `main` == `dev` == `origin` en `ec0f42d`, árbol limpio |
+| Git | `dev` con respaldo/restauración; `main` se actualiza al publicar |
 
 **Deuda técnica visible**
 
@@ -123,10 +126,11 @@ inyección de dependencias formal.
   duplicado y tests de ejemplo. `desktopApp` no usa nada de ese módulo.
 - `desktopApp/src/main/kotlin/.../data/local/current_bg.txt` está versionado y
   vacío; el código real usa `~/.local/share/Aura/current_bg.txt`.
-- `domain/models/Card.kt` no se usa.
 - `MediaViewModel.getCurrentThemeSddm()` y `getGreeterPathSddm()` no se usan.
 - `MediaRepositoryImple` (typo).
 - Los hilos se manejan con `thread { }` en lugar de corrutinas/`Dispatchers.IO`.
+- La configuración se escribe directamente; todavía no hay escritura atómica
+  (temporal + `rename`), aunque el respaldo permite revertir.
 
 ---
 
@@ -134,24 +138,25 @@ inyección de dependencias formal.
 
 ### 3.1 Prioridad alta (bloqueantes para una versión usable)
 
-- [ ] **Respaldo y restauración de la configuración de SDDM** antes de aplicar.
-      Hoy un cambio puede dejar el login roto sin vuelta atrás.
+- [x] **Respaldo y restauración de la configuración de SDDM** antes de aplicar.
+      Implementado con manifiesto, listado y restauración desde Ajustes.
 - [ ] **Cubrir `SddmRepositoryImpl` con pruebas**: detección de tema/fondo,
       reescritura de `ConfigFile` y `theme.conf`, aplicación con nombres con
-      espacios, videos y casos de error. Usar directorios temporales.
+      espacios, videos y casos de error. Los respaldos ya tienen 3 pruebas con
+      directorios temporales.
 - [ ] **Mejorar la gestión de permisos y errores de `Aplicar`**:
       - distinguir cancelación de autenticación vs. fallo real,
       - avisar si no hay agente Polkit o `pkexec`,
       - evitar estados intermedios si falla a mitad de la operación.
-- [ ] **Vista de Ajustes funcional** (hoy solo muestra "en construcción"):
-      ver `docs/ideas-ajustes.md` para la lista priorizada.
+- [ ] **Vista de Ajustes funcional** (hoy incluye respaldos; faltan diagnóstico,
+      selector de tema y apariencia): ver `docs/ideas-ajustes.md`.
 - [ ] **Proteger acciones sin selección**: el botón Eliminar abre el diálogo
       incluso sin archivo seleccionado y muestra `'null'`.
 - [ ] **Elegir destino al aplicar**: login, bloqueo o ambos (hoy aplica a ambos).
 - [ ] **Escritura atómica de configuración**: escribir a un temporal y renombrar
       para no dejar un archivo corrupto si la app se cierra a mitad.
-- [ ] **Limpiar código muerto y restos de plantilla**: `shared/`, `Card.kt`,
-      `current_bg.txt` versionado, métodos sin uso.
+- [ ] **Limpiar código muerto y restos de plantilla**: `shared/`, `current_bg.txt`
+      versionado, métodos sin uso.
 
 ### 3.2 Prioridad media
 
@@ -270,7 +275,7 @@ Esfuerzo estimado: **B** bajo · **M** medio · **A** alto.
 
 | # | Idea | Valor | Esfuerzo | Prioridad |
 |---|------|-------|----------|-----------|
-| 1 | Respaldo y restauración de configuración SDDM | Evita romper el login | B | **P0** |
+| 1 | Respaldo y restauración de configuración SDDM ✅ | Evita romper el login | B | **P0** |
 | 2 | Selector de pantalla destino (login / bloqueo / ambos) | Control real del cambio | B | **P0** |
 | 3 | Selector de tema SDDM instalado | Trabajar con varios temas | B | **P0** |
 | 4 | Diagnóstico del entorno y dependencias | Menos soporte y errores | B | **P1** |
@@ -302,10 +307,13 @@ Esfuerzo estimado: **B** bajo · **M** medio · **A** alto.
 
 ### Detalle de las ideas más valiosas
 
-**1. Respaldo y restauración**
-Guardar copia de `sddm.conf`, `sddm.conf.d/*` y del archivo de tema modificado en
-`~/.local/share/Aura/backups/<fecha>/`, con opción de restaurar desde la app.
-Habilita aplicar cambios sin miedo.
+**1. Respaldo y restauración — implementado**
+Cada aplicación crea `~/.local/share/Aura/backups/<fecha>-<tema>/` con el
+`ConfigFile` del tema, el fondo de destino si ya existía y `current_bg.txt`. Un
+manifiesto escrito al final registra las rutas. La restauración está en Ajustes
+Avanzados, pide confirmación y usa `pkexec` si el tema pertenece al sistema.
+No se copia `sddm.conf` porque `applyBackground` no lo modifica; incluirlo
+implicaría restaurar configuración global ajena a la operación.
 
 **2. Destino del fondo**
 Permitir aplicar solo al login, solo al bloqueo o a ambos. En SilentSDDM son
@@ -338,8 +346,8 @@ y dotfiles.
 
 ### Corto plazo — v0.2 (estabilizar)
 
-1. Backups + restauración.
-2. Tests de `SddmRepositoryImpl`.
+1. [x] Backups + restauración.
+2. Tests de `SddmRepositoryImpl` (los respaldos ya tienen 3 pruebas).
 3. Gestión de permisos/errores de `Aplicar` (cancelación, `pkexec` ausente).
 4. Selector de destino login/bloqueo/ambos.
 5. Limpieza de código muerto y del módulo `shared`.
@@ -383,11 +391,11 @@ y dotfiles.
 
 - Solo gestiona el tema SDDM activo; no hay selector de tema.
 - Aplica siempre a login y bloqueo a la vez.
-- No hay respaldo ni deshacer.
+- Hay respaldo y restauración, pero no escritura atómica ni redo.
 - No detecta fondos definidos únicamente por color.
 - No reinicia SDDM; el usuario debe cerrar sesión o reiniciar el servicio.
-- La vista de Ajustes está vacía.
-- Sin tests del módulo de escritorio.
+- Ajustes solo incluye respaldos; diagnóstico, tema y apariencia están pendientes.
+- Cobertura inicial de 3 pruebas de respaldo; falta el resto del repositorio.
 
 ---
 

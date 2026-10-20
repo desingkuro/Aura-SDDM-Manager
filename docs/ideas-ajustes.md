@@ -18,7 +18,7 @@ romper el arranque del login si se hace mal).
 | # | Idea | Nivel | Impacto | Esfuerzo | Riesgo |
 |---|------|-------|---------|----------|--------|
 | 1 | Aplicar fondo a SDDM (login/bloqueo/ambos) | Imprescindible | Alto | Alto | Alto |
-| 2 | Copia de seguridad y restauración de config SDDM | Imprescindible | Alto | Medio | Bajo |
+| 2 | Copia de seguridad y restauración de config SDDM ✅ | Imprescindible | Alto | Medio | Bajo |
 | 3 | Selector de tema SDDM instalado | Imprescindible | Alto | Bajo | Bajo |
 | 4 | Diagnóstico del entorno (dependencias y estado) | Imprescindible | Alto | Bajo | Bajo |
 | 5 | Opciones del tema (relleno, desenfoque, brillo, saturación) | Muy útil | Alto | Medio | Bajo |
@@ -58,18 +58,18 @@ romper el arranque del login si se hace mal).
 - Temas tradicionales: reescribir `[General] background` en `theme.conf`.
 - Requiere permisos: `pkexec`/Polkit o elevar para escribir en
   `/usr/share/sddm/themes/...` o `/etc/sddm.conf.d/`.
-- Riesgo alto: conviene hacerlo **después** de la idea 2 (backups).
+- Riesgo alto, aunque la idea 2 (backups) ya está implementada.
 
 **Esfuerzo:** Alto · **Depende de:** idea 2 y 4.
 
 ---
 
-### 2. Copia de seguridad y restauración de la configuración de SDDM
+### 2. Copia de seguridad y restauración de la configuración de SDDM ✅
 
 **Qué permite**
-- Guardar una copia de `sddm.conf`, `sddm.conf.d/*` y del archivo de tema
-  afectado antes de cualquier cambio.
-- Botón "Restaurar última copia" y listado de copias con fecha.
+- Guardar automáticamente una copia antes de cada aplicación de fondo.
+- Listar las copias con fecha, tema y fondo, y restaurar cualquiera desde
+  Ajustes Avanzados.
 
 **Para qué sirve**
 - Red de seguridad: si un cambio deja el login roto, el usuario puede volver
@@ -77,8 +77,17 @@ romper el arranque del login si se hace mal).
   cambios automáticos.
 
 **Notas técnicas**
-- Guardar en `~/.local/share/Aura/backups/<fecha>/`.
-- Registrar qué archivos se tocaron en cada operación.
+- Guardar en `~/.local/share/Aura/backups/<fecha>-<tema>/`.
+- Copia el `ConfigFile` del tema, el fondo de destino si ya existía y
+  `current_bg.txt`.
+- `backup.properties` se escribe al final; una carpeta sin manifiesto se ignora.
+- No copia `sddm.conf` porque la aplicación de fondos no lo modifica. Se
+  incluirá cuando exista el selector de tema.
+- La restauración valida que las rutas estén dentro del tema y usa `pkexec` si
+  hace falta.
+
+**Estado:** implementado en `SddmRepositoryImpl`, `SettingsViewModel` y
+`SettingsScreen`, con 3 pruebas de respaldo en directorios temporales.
 
 **Esfuerzo:** Medio · **Depende de:** nada.
 
@@ -286,13 +295,13 @@ Elegir fondo por pantalla y detectar resolución. Complejo y depende del tema.
 
 ## MVP sugerido para la primera versión de Ajustes
 
-Si quieres algo funcional y de bajo riesgo ya mismo, el orden recomendado es:
+Para completar Ajustes con bajo riesgo, el orden recomendado es:
 
 1. **Diagnóstico del entorno** (idea 4) — barato y muy útil.
 2. **Selector de tema SDDM** (idea 3) — barato y desbloquea lo demás.
 3. **Gestión de almacenamiento y caché** (idea 7) — barato.
-4. **Copia de seguridad** (idea 2) — habilita aplicar sin miedo.
-5. **Aplicar fondo** (idea 1) — el objetivo real de la app.
+4. **Copia de seguridad** (idea 2) — ✅ ya implementada.
+5. **Aplicar fondo** (idea 1) — ✅ ya implementado.
 
 Luego, en una segunda iteración, apariencia (5), rutas (6) y presets (9).
 
