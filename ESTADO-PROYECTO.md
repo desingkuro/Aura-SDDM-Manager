@@ -1,7 +1,8 @@
 # Estado del proyecto — Aura SDDM Manager
 
 > **Última actualización:** 19 de octubre de 2026
-> **Rama de trabajo:** `dev` · **Último bloque:** respaldos y restauración.
+> **Rama de trabajo:** `dev` · **Último bloque:** respaldos, restauración y
+> escritura atómica.
 > **Sincronización:** `main` y `dev` se actualizan al publicar este bloque.
 > **Build:** `./gradlew build` y `./gradlew :desktopApp:test` → correctos.
 
@@ -19,9 +20,10 @@ una galería, previsualizar el tema real y **aplicar** el fondo seleccionado al
 tema SDDM activo, incluyendo videos animados.
 
 El proyecto es estable a nivel de compilación y de flujo manual: importar →
-seleccionar → previsualizar → aplicar funciona, y cada aplicación deja un
-respaldo restaurable. La deuda principal ahora es la **escritura atómica**, la
-**cobertura de pruebas**, la **gestión de permisos y errores**, y completar la
+seleccionar → previsualizar → aplicar funciona, cada aplicación deja un
+respaldo restaurable y la configuración se publica de forma atómica. La deuda
+principal ahora es la **cobertura de pruebas**, la **gestión de permisos y
+errores**, la **transaccionalidad entre configuración y fondo**, y completar la
 **vista de Ajustes** (diagnóstico, selector de tema y apariencia).
 
 **Semáforo general**
@@ -33,7 +35,7 @@ respaldo restaurable. La deuda principal ahora es la **escritura atómica**, la
 | Aplicar cambios en SDDM | 🟢 Funcional, 🟢 con respaldo/restauración |
 | Previsualización | 🟢 Funcional |
 | Ajustes | 🟡 Respaldos implementados; diagnóstico, tema y apariencia pendientes |
-| Pruebas automatizadas | 🟡 4 pruebas de respaldo; falta cobertura amplia |
+| Pruebas automatizadas | 🟡 5 pruebas de respaldo/escritura; falta cobertura amplia |
 | Empaquetado / distribución | 🟡 Configurado, no verificado |
 | Documentación | 🟢 README + `docs/ideas-ajustes.md` + este archivo |
 
@@ -64,7 +66,7 @@ respaldo restaurable. La deuda principal ahora es la **escritura atómica**, la
 | Pantalla de Ajustes | 🟡 | Lista de respaldos; diagnóstico, tema y apariencia pendientes |
 | Persistencia de preferencias | ❌ | No existe |
 | Respaldo / deshacer cambios | ✅ | Respaldo y restauración; no hay redo |
-| Tests del módulo desktop | 🟡 | 4 pruebas de respaldo con directorios temporales |
+| Tests del módulo desktop | 🟡 | 5 pruebas de respaldo/escritura con directorios temporales |
 | Internacionalización | ❌ | Textos en español hardcodeados |
 | Empaquetado probado | 🟡 | `nativeDistributions` configurado, sin verificar |
 
@@ -116,7 +118,7 @@ inyección de dependencias formal.
 | JDK | Toolchain 21 (Azul), descargado por Gradle |
 | Módulos | `:desktopApp` (JVM), `:shared` (KMP, sin uso) |
 | Config cache | Activada (`org.gradle.configuration-cache=true`) |
-| Tests | `desktopApp` (4 de respaldo) + `shared` (triviales) |
+| Tests | `desktopApp` (5 de respaldo/escritura) + `shared` (triviales) |
 | Permisos | `pkexec`/PolicyKit con script temporal |
 | Git | `dev` con respaldo/restauración; `main` se actualiza al publicar |
 
@@ -129,8 +131,9 @@ inyección de dependencias formal.
 - `MediaViewModel.getCurrentThemeSddm()` y `getGreeterPathSddm()` no se usan.
 - `MediaRepositoryImple` (typo).
 - Los hilos se manejan con `thread { }` en lugar de corrutinas/`Dispatchers.IO`.
-- La configuración se escribe directamente; todavía no hay escritura atómica
-  (temporal + `rename`), aunque el respaldo permite revertir.
+- La configuración se publica con temporal + `rename` atómico. El fondo se copia
+  antes y la configuración se activa al final, pero el conjunto config+fondo
+  todavía no es una operación transaccional.
 
 ---
 
@@ -142,8 +145,8 @@ inyección de dependencias formal.
       Implementado con manifiesto, listado y restauración desde Ajustes.
 - [ ] **Cubrir `SddmRepositoryImpl` con pruebas**: detección de tema/fondo,
       reescritura de `ConfigFile` y `theme.conf`, aplicación con nombres con
-      espacios, videos y casos de error. Los respaldos ya tienen 4 pruebas con
-      directorios temporales.
+      espacios, videos y casos de error. Los respaldos y la escritura atómica ya
+      tienen 5 pruebas con directorios temporales.
 - [ ] **Mejorar la gestión de permisos y errores de `Aplicar`**:
       - distinguir cancelación de autenticación vs. fallo real,
       - avisar si no hay agente Polkit o `pkexec`,
@@ -153,8 +156,9 @@ inyección de dependencias formal.
 - [ ] **Proteger acciones sin selección**: el botón Eliminar abre el diálogo
       incluso sin archivo seleccionado y muestra `'null'`.
 - [ ] **Elegir destino al aplicar**: login, bloqueo o ambos (hoy aplica a ambos).
-- [ ] **Escritura atómica de configuración**: escribir a un temporal y renombrar
-      para no dejar un archivo corrupto si la app se cierra a mitad.
+- [x] **Escritura atómica de configuración**: temporal en el mismo directorio +
+      `rename`, tanto en escritura directa como con `pkexec`, y respeto de
+      symlinks. El fondo se copia antes y la configuración se activa al final.
 - [ ] **Limpiar código muerto y restos de plantilla**: `shared/`, `current_bg.txt`
       versionado, métodos sin uso.
 
@@ -191,9 +195,10 @@ inyección de dependencias formal.
 ### 4.1 Seguridad y robustez
 
 1. **Backup automático antes de aplicar** (config y fondo anterior) y botón de
-   restauración. Es la mejora más importante del proyecto.
-2. **Escritura atómica**: temporal + `rename`; validar que el archivo resultante
-   se pueda leer antes de reemplazar el original.
+   restauración. ✅ Implementado.
+2. **Escritura atómica de configuración**: temporal + `rename`, implementada en
+   escritura directa y con `pkexec`. Falta hacer transaccional la operación
+   completa (configuración + archivo de fondo) y conservar permisos/propietario.
 3. **Modelo de privilegios más estricto**: hoy se ejecuta con `pkexec` un script
    temporal propiedad del usuario. Funciona, pero conviene evaluar un *helper*
    Polkit dedicado o `pkexec` con argumentos acotados.
@@ -347,7 +352,7 @@ y dotfiles.
 ### Corto plazo — v0.2 (estabilizar)
 
 1. [x] Backups + restauración.
-2. Tests de `SddmRepositoryImpl` (los respaldos ya tienen 4 pruebas).
+2. Tests de `SddmRepositoryImpl` (respaldos y escritura atómica ya tienen 5 pruebas).
 3. Gestión de permisos/errores de `Aplicar` (cancelación, `pkexec` ausente).
 4. Selector de destino login/bloqueo/ambos.
 5. Limpieza de código muerto y del módulo `shared`.
@@ -381,7 +386,7 @@ y dotfiles.
 | Diferencias entre temas/distros | Medio | Rutas configurables y detección robusta |
 | Videos con códecs no soportados | Medio | Validación/transcodificación |
 | GIF como fondo | Alto (puede crashear SDDM) | Bloquear o convertir a video/imagen |
-| Escritura no atómica de config | Alto | Temporal + `rename` |
+| Config a medio escribir | Bajo | Temporal + `rename` atómico (implementado) |
 | Propiedad `root` de los archivos tras `pkexec` | Bajo | Restaurar permisos esperados |
 | `current_bg.txt` desactualizado | Bajo | Validar existencia y caer al tema |
 | Miniaturas de video regeneradas | Bajo | Caché en disco |
@@ -391,11 +396,12 @@ y dotfiles.
 
 - Solo gestiona el tema SDDM activo; no hay selector de tema.
 - Aplica siempre a login y bloqueo a la vez.
-- Hay respaldo y restauración, pero no escritura atómica ni redo.
+- Hay respaldo, restauración y escritura atómica de configuración; faltan redo y
+  transaccionalidad entre configuración y fondo.
 - No detecta fondos definidos únicamente por color.
 - No reinicia SDDM; el usuario debe cerrar sesión o reiniciar el servicio.
 - Ajustes solo incluye respaldos; diagnóstico, tema y apariencia están pendientes.
-- Cobertura inicial de 4 pruebas de respaldo; falta el resto del repositorio.
+- Cobertura inicial de 5 pruebas de respaldo/escritura; falta el resto del repositorio.
 
 ---
 

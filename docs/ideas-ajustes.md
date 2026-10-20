@@ -85,9 +85,12 @@ romper el arranque del login si se hace mal).
   incluirá cuando exista el selector de tema.
 - La restauración valida que las rutas estén dentro del tema y usa `pkexec` si
   hace falta.
+- La configuración se escribe en un temporal del mismo directorio y se publica
+  con `rename` atómico, tanto directamente como mediante `pkexec`.
 
 **Estado:** implementado en `SddmRepositoryImpl`, `SettingsViewModel` y
-`SettingsScreen`, con 4 pruebas de respaldo en directorios temporales.
+`SettingsScreen`, con 5 pruebas de respaldo y escritura atómica en directorios
+temporales.
 
 **Esfuerzo:** Medio · **Depende de:** nada.
 

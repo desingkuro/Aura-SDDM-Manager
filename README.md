@@ -134,6 +134,7 @@ Contiene las implementaciones de repositorio y utilidades de almacenamiento loca
 - Para temas tradicionales, el fondo se obtiene desde `theme.conf` (`[General] background`).
 - Para SilentSDDM, el fondo se obtiene desde `metadata.desktop` → `ConfigFile=` → `configs/*.conf`, leyendo `[LoginScreen] background` o `[LockScreen] background` y resolviendo rutas relativas contra `backgrounds/`.
 - La acción de **Aplicar** crea primero un respaldo de la configuración y del fondo anterior, y después copia el fondo seleccionado (imagen o video) a la carpeta `backgrounds/` del tema SDDM actual y reescribe su configuración (`ConfigFile` de `metadata.desktop` o `theme.conf`) para que las pantallas de login y bloqueo lo usen. El cambio se registra en `~/.local/share/Aura/current_bg.txt`.
+- La configuración se escribe primero en un temporal del mismo directorio y se publica con `rename` atómico. Así SDDM nunca lee un archivo a medio escribir; se respetan los symlinks y se fijan permisos `644`.
 - Los respaldos se guardan en `~/.local/share/Aura/backups/<fecha>-<tema>/` y se pueden restaurar desde **Ajustes Avanzados**. La restauración pide confirmación y usa `pkexec` solo si el tema pertenece al sistema.
 - Si el tema pertenece al sistema (`root`), la escritura se realiza mediante `pkexec`/PolicyKit; si el usuario tiene permisos sobre el tema, se escribe directamente.
 - Para videos animados basta con copiar el archivo con su extensión: el tema decide si lo anima (SilentSDDM admite `mp4`, `mkv`, `mov`, `webm`, `m4v`, entre otros).
@@ -148,12 +149,12 @@ Antes de aplicar un fondo, Aura crea una carpeta en `~/.local/share/Aura/backups
 - `current-bg.txt`: registro previo del fondo aplicado por Aura.
 - `backup.properties`: manifiesto con fecha, tema, rutas y banderas de restauración.
 
-El manifiesto se escribe al final: si una operación se interrumpe, la carpeta queda incompleta y no aparece en la lista de respaldos. Restaurar vuelve a dejar la configuración y el fondo anterior; si el fondo aplicado era nuevo, se elimina. El respaldo no se borra después de restaurar, así que puede reintentarse.
+El manifiesto se escribe al final y se publica con un movimiento atómico: si una operación se interrumpe, la carpeta queda incompleta y no aparece en la lista de respaldos. Restaurar vuelve a dejar la configuración y el fondo anterior; si el fondo aplicado era nuevo, se elimina. El respaldo no se borra después de restaurar, así que puede reintentarse. La configuración restaurada también usa temporal + `rename`.
 
 ## Próximos pasos
 
 1. Selector de destino al aplicar: login, bloqueo o ambos.
-2. Escritura atómica de la configuración y restauración de permisos originales.
+2. Restauración de permisos/propietario originales y operación transaccional entre configuración y fondo.
 3. Ampliar las pruebas a detección de temas, reescritura INI y flujo con `pkexec`.
 4. Diagnóstico del entorno y selector de tema en Ajustes.
 5. Detectar fondos definidos únicamente por color.
