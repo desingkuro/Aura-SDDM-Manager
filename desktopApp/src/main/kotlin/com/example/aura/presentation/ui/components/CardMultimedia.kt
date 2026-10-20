@@ -30,7 +30,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.jetbrains.compose.resources.painterResource
 import java.io.File
-import kotlin.concurrent.thread
 
 @Composable
 fun CardMultimedia(
