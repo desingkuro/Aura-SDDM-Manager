@@ -11,7 +11,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.MutableState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -30,6 +29,7 @@ import aura.desktopapp.generated.resources.images_regular_full
 import aura.desktopapp.generated.resources.video_travel_image_svgrepo_com
 import com.example.aura.presentation.ui.theme.AuraColors
 import com.example.aura.presentation.utils.openFilePicker
+import com.example.aura.presentation.viewmodels.MediaType
 import com.example.aura.presentation.viewmodels.MediaViewModel
 import org.jetbrains.compose.resources.DrawableResource
 import org.jetbrains.compose.resources.painterResource
@@ -38,17 +38,15 @@ import java.io.File
 @Composable
 fun MainScreen(
     modifier: Modifier = Modifier,
-    pahtActual: MutableState<String>,
+    mediaType: MediaType,
     listFiles: List<File>,
     viewModel: MediaViewModel
 ) {
     val scrollState = rememberScrollState()
-    val isVideo = pahtActual.value == "video"
-    val contentLabel = if (isVideo) "video" else "imagen"
-    val mediaType = if (isVideo) "video" else "image"
+    val isVideo = mediaType == MediaType.VIDEO
     val emptyIcon = if (isVideo) Res.drawable.video_travel_image_svgrepo_com else Res.drawable.images_regular_full
     val selectedFile = viewModel.selectedFile
-    val selectedType = viewModel.selectedTypeFile ?: mediaType
+    val selectedType = viewModel.selectedTypeFile ?: mediaType.cardType
     val mediaFileApplied = viewModel.fileApplied
 
     Row(
@@ -82,12 +80,12 @@ fun MainScreen(
                         listFiles.forEach { file ->
                             CardMultimedia(
                                 file = file,
-                                type = mediaType,
+                                type = mediaType.cardType,
                                 modifier = Modifier
                                     .width(220.dp)
                                     .height(150.dp),
                                 isSelected = selectedFile?.absolutePath == file.absolutePath,
-                                onSelected = { viewModel.selectFile(file, mediaType) },
+                                onSelected = { viewModel.selectFile(file, mediaType.cardType) },
                             )
                         }
                     }
@@ -112,14 +110,14 @@ fun MainScreen(
                         )
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(
-                            text = "Aún no hay ${contentLabel}s importados",
+                            text = "Aún no hay ${mediaType.plural} en la galería",
                             color = AuraColors.TextPrimary,
                             fontSize = 22.sp,
                             fontWeight = FontWeight.SemiBold
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = "Importa un ${contentLabel} para empezar a personalizar tu pantalla de inicio.",
+                            text = "Importa ${mediaType.article} ${mediaType.singular} para empezar a personalizar tu pantalla de inicio.",
                             color = AuraColors.TextSecondary,
                             fontSize = 14.sp,
                             textAlign = TextAlign.Center
@@ -149,7 +147,7 @@ fun MainScreen(
                 )
                 Spacer(modifier = Modifier.width(14.dp))
                 Text(
-                    text = "Importar $contentLabel",
+                    text = "Importar ${mediaType.singular}",
                     color = AuraColors.TextPrimary,
                     fontSize = 17.sp,
                     fontWeight = FontWeight.SemiBold

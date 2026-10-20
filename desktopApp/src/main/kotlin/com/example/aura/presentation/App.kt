@@ -15,10 +15,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import com.example.aura.presentation.ui.components.Sidebar
-import com.example.aura.presentation.ui.screens.ImageScreen
+import com.example.aura.presentation.ui.screens.MediaScreen
 import com.example.aura.presentation.ui.screens.SettingsScreen
-import com.example.aura.presentation.ui.screens.VideoScreeen
 import com.example.aura.presentation.ui.theme.AuraColors
+import com.example.aura.presentation.viewmodels.MediaType
 
 @Composable
 @Preview
@@ -42,10 +42,10 @@ fun App() {
             )
             Box(modifier = Modifier.fillMaxWidth(.78f).fillMaxHeight()) {
                 when (routActual.value) {
-                    "image" -> ImageScreen(modifier = Modifier,routActual)
-                    "video" -> VideoScreeen(modifier = Modifier,routActual)
+                    MediaType.IMAGE.route -> MediaScreen(mediaType = MediaType.IMAGE, modifier = Modifier)
+                    MediaType.VIDEO.route -> MediaScreen(mediaType = MediaType.VIDEO, modifier = Modifier)
                     "ajustes_avanzados" -> SettingsScreen(modifier = Modifier)
-                    else -> ImageScreen(modifier = Modifier,routActual)
+                    else -> MediaScreen(mediaType = MediaType.IMAGE, modifier = Modifier)
                 }
             }
         }

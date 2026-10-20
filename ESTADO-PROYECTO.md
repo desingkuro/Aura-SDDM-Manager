@@ -80,7 +80,7 @@ Aura/
 │       │   └── repository/      # MediaRepository, SddmRepository
 │       ├── presentation/
 │       │   ├── ui/components/   # Sidebar, MainScreen, Footer, diálogos…
-│       │   ├── ui/screens/      # ImageScreen, VideoScreeen, SettingsScreen
+│       │   ├── ui/screens/      # MediaScreen, SettingsScreen
 │       │   ├── ui/theme/        # AuraColors
 │       │   ├── utils/           # FilePicker, conversión de miniaturas
 │       │   └── viewmodels/      # MediaViewModel, Navigations
@@ -125,8 +125,7 @@ inyección de dependencias formal.
   vacío; el código real usa `~/.local/share/Aura/current_bg.txt`.
 - `domain/models/Card.kt` no se usa.
 - `MediaViewModel.getCurrentThemeSddm()` y `getGreeterPathSddm()` no se usan.
-- `VideoScreeen` (typo), `pahtActual` (typo), `MediaRepositoryImple` (typo).
-- `ImageScreen` y `VideoScreeen` son casi idénticas (duplicación).
+- `MediaRepositoryImple` (typo).
 - Los hilos se manejan con `thread { }` en lugar de corrutinas/`Dispatchers.IO`.
 
 ---
@@ -204,8 +203,8 @@ inyección de dependencias formal.
    para sacar lógica del repositorio y facilitar pruebas.
 2. **Inyección de dependencias** sencilla (constructor/manual) en lugar de
    instanciar repositorios dentro del ViewModel.
-3. **Unificar `ImageScreen` y `VideoScreeen`** en una sola pantalla parametrizada.
-4. **Corregir nombres**: `VideoScreen`, `pathActual`, `MediaRepositoryImpl`.
+3. ~~Unificar `ImageScreen` y `VideoScreeen`~~ ✅ Hecho con `MediaScreen` + `MediaType`.
+4. **Corregir nombres**: `MediaRepositoryImpl`.
 5. **Eliminar el módulo `shared`** si no se va a reutilizar, o mover allí los
    modelos y utilidades realmente compartidos.
 6. **Usar corrutinas** (`viewModelScope`/`Dispatchers.IO`) en vez de `thread`.

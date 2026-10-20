@@ -16,12 +16,12 @@ val menuItems = listOf(
     NavigationItem(
         "Fondo Imagenes",
         Res.drawable.images_regular_full,
-        path = "image"
+        path = MediaType.IMAGE.route
     ),
     NavigationItem(
         "Fondo animado (Video)",
         Res.drawable.video_travel_image_svgrepo_com,
-        path = "video"
+        path = MediaType.VIDEO.route
     ),
     NavigationItem(
         "Ajustes Avanzados",

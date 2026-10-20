@@ -94,9 +94,9 @@ Aura/
 Contiene la interfaz de usuario, navegación, componentes visuales, utilidades de archivos y viewmodels.
 
 - `App`: punto de composición principal.
-- `ImageScreen` / `VideoScreeen`: pantallas para fondos estáticos y animados.
+- `MediaScreen`: pantalla compartida para fondos estáticos y animados, parametrizada por `MediaType`.
 - `components/`: sidebar, tarjetas, header, footer, diálogos y panel principal.
-- `viewmodels/`: estados de imágenes, videos, selección, fondo aplicado, errores y previsualización SDDM.
+- `viewmodels/`: estados de imágenes, videos, selección, fondo aplicado, errores y previsualización SDDM; `MediaType` centraliza rutas y textos por tipo de medio.
 - `utils/`: selector de archivos y conversión a `ImageBitmap`.
 
 ### Domain

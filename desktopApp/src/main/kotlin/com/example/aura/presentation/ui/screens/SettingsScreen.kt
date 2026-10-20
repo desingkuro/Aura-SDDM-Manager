@@ -1,5 +1,6 @@
 package com.example.aura.presentation.ui.screens
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -37,6 +38,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
 
         // CONTENIDO
         // Vista vacía por ahora: aquí vivirán las opciones de ajustes.
+
         Box(
             modifier = Modifier
                 .weight(1f)
