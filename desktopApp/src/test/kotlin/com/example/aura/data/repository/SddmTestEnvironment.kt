@@ -65,6 +65,7 @@ internal class SddmTestEnvironment {
     fun createTraditionalTheme(
         name: String = "traditional",
         backgroundName: String = "old.jpg",
+        makeCurrent: Boolean = true,
     ): File {
         val traditionalThemeDir = File(themesDir, name).apply { mkdirs() }
         val traditionalBackgroundsDir = File(traditionalThemeDir, "backgrounds").apply { mkdirs() }
@@ -72,7 +73,9 @@ internal class SddmTestEnvironment {
         File(traditionalThemeDir, "theme.conf").writeText(
             "[General]\nbackground=$backgroundName\n"
         )
-        sddmConf.writeText("[Theme]\nCurrent=$name\n")
+        if (makeCurrent) {
+            sddmConf.writeText("[Theme]\nCurrent=$name\n")
+        }
         return traditionalThemeDir
     }
 

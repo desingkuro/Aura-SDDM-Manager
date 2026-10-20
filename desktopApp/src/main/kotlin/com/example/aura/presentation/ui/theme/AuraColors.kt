@@ -14,4 +14,6 @@ object AuraColors {
     val TextSecondary = Color(0xFFA5AAB3)
     val TextMuted = Color(0xFF747982)
     val Danger = Color(0xFFF28B82)
+    val Success = Color(0xFF81C995)
+    val Warning = Color(0xFFFDD663)
 }
