@@ -260,7 +260,8 @@ fun MainScreen(
             buildString {
                 append("Se aplicará \"${file.name}\" como fondo del tema SDDM")
                 if (viewModel.currentTheme.isNotBlank()) append(" \"${viewModel.currentTheme}\"")
-                append(".\n\nSe solicitarán permisos de administrador. ¿Deseas continuar?")
+                append(".\n\nSelecciona dónde aplicarlo. Se solicitarán permisos de administrador ")
+                append("si es necesario.")
             }
         }.orEmpty(),
         confirmText = "Aplicar",
@@ -268,6 +269,13 @@ fun MainScreen(
         onConfirm = {
             viewModel.closeApplyDialog()
             viewModel.applySelectedBackground()
+        },
+        content = {
+            DestinationSelector(
+                selected = viewModel.destination,
+                supportsSeparateScreens = viewModel.supportsSeparateScreens,
+                onSelected = viewModel::selectDestination,
+            )
         }
     )
 

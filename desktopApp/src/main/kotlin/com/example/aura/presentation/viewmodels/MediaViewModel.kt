@@ -6,6 +6,7 @@ import androidx.compose.runtime.setValue
 import com.example.aura.data.repository.MediaRepositoryImple
 import com.example.aura.data.repository.SddmRepositoryImpl
 import com.example.aura.domain.models.ApplyBackgroundResult
+import com.example.aura.domain.models.BackgroundDestination
 import com.example.aura.domain.repository.MediaRepository
 import com.example.aura.domain.repository.SddmRepository
 import java.io.File
@@ -39,6 +40,12 @@ class MediaViewModel(
     var currentTheme by mutableStateOf("")
         private set
 
+    var destination by mutableStateOf(BackgroundDestination.BOTH)
+        private set
+
+    var supportsSeparateScreens by mutableStateOf(true)
+        private set
+
     var isApplying by mutableStateOf(false)
         private set
 
@@ -69,6 +76,11 @@ class MediaViewModel(
         viewDialogApply = false
     }
 
+    fun selectDestination(value: BackgroundDestination) {
+        if (!supportsSeparateScreens && value != BackgroundDestination.BOTH) return
+        destination = value
+    }
+
     fun loadImages() {
         listImages = mediaRepository.getImageFiles()
     }
@@ -86,6 +98,10 @@ class MediaViewModel(
     fun loadFileApplied() {
         fileApplied = sddmRepository.getAppliedBackground()
         currentTheme = sddmRepository.getCurrentTheme()
+        supportsSeparateScreens = sddmRepository.supportsSeparateScreens()
+        if (!supportsSeparateScreens) {
+            destination = BackgroundDestination.BOTH
+        }
     }
 
     fun importNewFile(file: File) {
@@ -131,7 +147,7 @@ class MediaViewModel(
     }
 
     fun launchSddmPreview() {
-        sddmRepository.launchPreview(selectedFile)
+        sddmRepository.launchPreview(selectedFile, destination)
     }
 
     /**
@@ -143,14 +159,16 @@ class MediaViewModel(
         val file = selectedFile ?: return
         if (isApplying) return
 
+        val target = destination
         isApplying = true
         thread(isDaemon = true) {
-            when (val result = sddmRepository.applyBackground(file)) {
+            when (val result = sddmRepository.applyBackground(file, target)) {
                 is ApplyBackgroundResult.Success -> {
                     applySucceeded = true
-                    applyMessage = "\"${result.backgroundName}\" se aplicó correctamente al tema " +
-                        "\"${result.themeName}\".\n\nSe creó un respaldo automático que puedes " +
-                        "restaurar desde Ajustes Avanzados.\n\nReinicia SDDM o cierra sesión para ver el cambio."
+                    applyMessage = "\"${result.backgroundName}\" se aplicó correctamente a " +
+                        "${target.targetDescription} del tema \"${result.themeName}\".\n\n" +
+                        "Se creó un respaldo automático que puedes restaurar desde Ajustes " +
+                        "Avanzados.\n\nReinicia SDDM o cierra sesión para ver el cambio."
                 }
 
                 is ApplyBackgroundResult.Failure -> {

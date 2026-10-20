@@ -1,6 +1,7 @@
 package com.example.aura.data.repository
 
 import com.example.aura.domain.models.ApplyBackgroundResult
+import com.example.aura.domain.models.BackgroundDestination
 import org.junit.Test
 import java.io.File
 import kotlin.test.assertEquals
@@ -66,6 +67,104 @@ class SddmRepositoryTest {
             assertTrue(config.contains("[LockScreen]"))
             assertEquals(2, Regex("""background\s*=\s*"source\.jpg"""").findAll(config).count())
             assertEquals(2, Regex("use-background-color\\s*=\\s*false").findAll(config).count())
+        } finally {
+            env.close()
+        }
+    }
+
+    @Test
+    fun `aplica solo al login y conserva el fondo de bloqueo`() {
+        val env = SddmTestEnvironment()
+        try {
+            env.source.writeText("new-bytes")
+
+            val result = env.repository.applyBackground(
+                env.source,
+                BackgroundDestination.LOGIN,
+            )
+
+            assertTrue(result is ApplyBackgroundResult.Success)
+            val config = env.themeConfig.readText()
+            assertEquals(1, Regex("""background\s*=\s*"source\.jpg"""").findAll(config).count())
+            assertTrue(config.contains("""background = "old.jpg""""))
+        } finally {
+            env.close()
+        }
+    }
+
+    @Test
+    fun `aplica solo al bloqueo y conserva el fondo de login`() {
+        val env = SddmTestEnvironment()
+        try {
+            env.source.writeText("new-bytes")
+
+            val result = env.repository.applyBackground(
+                env.source,
+                BackgroundDestination.LOCK,
+            )
+
+            assertTrue(result is ApplyBackgroundResult.Success)
+            val config = env.themeConfig.readText()
+            assertEquals(1, Regex("""background\s*=\s*"source\.jpg"""").findAll(config).count())
+            assertTrue(config.contains("""background = "old.jpg""""))
+        } finally {
+            env.close()
+        }
+    }
+
+    @Test
+    fun `inserta las claves que faltan sin duplicar la seccion`() {
+        val env = SddmTestEnvironment()
+        try {
+            env.themeConfig.writeText(
+                "[LoginScreen]\nfoo=bar\n\n[LockScreen]\nbackground = \"old.jpg\"\n"
+            )
+            env.source.writeText("new-bytes")
+
+            val result = env.repository.applyBackground(
+                env.source,
+                BackgroundDestination.LOGIN,
+            )
+
+            assertTrue(result is ApplyBackgroundResult.Success)
+            val config = env.themeConfig.readText()
+            assertEquals(1, Regex("\\[LoginScreen]").findAll(config).count())
+            assertTrue(config.contains("""background = "source.jpg""""))
+            assertTrue(config.contains("use-background-color = false"))
+            assertTrue(config.contains("""background = "old.jpg""""))
+        } finally {
+            env.close()
+        }
+    }
+
+    @Test
+    fun `rechaza login o bloqueo en un tema con fondo general`() {
+        val env = SddmTestEnvironment()
+        try {
+            env.createTraditionalTheme()
+            env.source.writeText("new-bytes")
+
+            val result = env.repository.applyBackground(
+                env.source,
+                BackgroundDestination.LOGIN,
+            )
+
+            assertTrue(result is ApplyBackgroundResult.Failure)
+            assertTrue(result.message.contains("fondo general"))
+        } finally {
+            env.close()
+        }
+    }
+
+    @Test
+    fun `detecta si el tema permite pantallas separadas`() {
+        val env = SddmTestEnvironment()
+        try {
+            assertTrue(env.repository.supportsSeparateScreens())
+
+            env.createTraditionalTheme()
+
+            assertTrue(!env.repository.supportsSeparateScreens())
         } finally {
             env.close()
         }

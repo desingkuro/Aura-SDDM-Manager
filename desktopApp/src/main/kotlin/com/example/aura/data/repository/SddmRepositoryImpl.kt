@@ -1,6 +1,7 @@
 package com.example.aura.data.repository
 
 import com.example.aura.domain.models.ApplyBackgroundResult
+import com.example.aura.domain.models.BackgroundDestination
 import com.example.aura.domain.models.RestoreBackupResult
 import com.example.aura.domain.models.SddmBackup
 import com.example.aura.domain.repository.SddmRepository
@@ -83,7 +84,18 @@ class SddmRepositoryImpl(
         return possiblePaths.firstOrNull { File(it).isFile } ?: ""
     }
 
-    override fun launchPreview(background: File?) {
+    override fun supportsSeparateScreens(): Boolean {
+        val themeDir = File(themesDir, getCurrentTheme())
+        if (!themeDir.isDirectory) return false
+
+        val configuredPath = readConfiguredThemePath(themeDir) ?: return false
+        return File(themeDir, configuredPath).isFile
+    }
+
+    override fun launchPreview(
+        background: File?,
+        destination: BackgroundDestination,
+    ) {
         if (background == null || !background.isFile) {
             println("No hay un fondo seleccionado para previsualizar.")
             return
@@ -106,7 +118,7 @@ class SddmRepositoryImpl(
                     return@thread
                 }
 
-                tempThemeDir = createTemporaryTheme(sourceThemeDir, background)
+                tempThemeDir = createTemporaryTheme(sourceThemeDir, background, destination)
                 if (tempThemeDir == null) {
                     println("Error: No se pudo preparar el tema temporal de previsualización.")
                     return@thread
@@ -141,7 +153,10 @@ class SddmRepositoryImpl(
         }
     }
 
-    override fun applyBackground(background: File): ApplyBackgroundResult {
+    override fun applyBackground(
+        background: File,
+        destination: BackgroundDestination,
+    ): ApplyBackgroundResult {
         if (!background.isFile) {
             return ApplyBackgroundResult.Failure("El archivo seleccionado ya no existe.")
         }
@@ -172,8 +187,18 @@ class SddmRepositoryImpl(
                         "No se encontró el archivo de configuración del tema \"$themeName\"."
                     )
                 }
-                newConfigContent = buildConfiguredThemePreview(themeConfigFile.readText(), background.name)
+                newConfigContent = buildConfiguredThemePreview(
+                    content = themeConfigFile.readText(),
+                    backgroundName = background.name,
+                    destination = destination,
+                )
             } else {
+                if (destination != BackgroundDestination.BOTH) {
+                    return ApplyBackgroundResult.Failure(
+                        "El tema \"$themeName\" usa un fondo general y no distingue entre login " +
+                            "y bloqueo. Selecciona \"Ambos\" para aplicar el fondo."
+                    )
+                }
                 themeConfigFile = File(themeDir, "theme.conf")
                 if (!themeConfigFile.isFile) {
                     return ApplyBackgroundResult.Failure(
@@ -793,7 +818,11 @@ class SddmRepositoryImpl(
      * fondo apuntan a [background]. El resto del tema se enlaza simbólicamente para
      * no duplicar archivos (fuentes, componentes, iconos, etc.).
      */
-    private fun createTemporaryTheme(sourceThemeDir: File, background: File): File? {
+    private fun createTemporaryTheme(
+        sourceThemeDir: File,
+        background: File,
+        destination: BackgroundDestination,
+    ): File? {
         return try {
             cleanupStalePreviewThemes()
             val tempThemeDir = Files.createTempDirectory("aura-sddm-preview-").toFile()
@@ -829,7 +858,11 @@ class SddmRepositoryImpl(
                 val tempConfig = File(tempThemeDir, configuredRelativePath)
                 tempConfig.parentFile?.mkdirs()
                 tempConfig.writeText(
-                    buildConfiguredThemePreview(sourceConfig.readText(), background.name)
+                    buildConfiguredThemePreview(
+                        content = sourceConfig.readText(),
+                        backgroundName = background.name,
+                        destination = destination,
+                    )
                 )
             } else {
                 val sourceThemeConf = File(sourceThemeDir, "theme.conf")
@@ -854,19 +887,49 @@ class SddmRepositoryImpl(
 
     /**
      * Reescribe un archivo de configuración tipo SilentSDDM para que las pantallas
-     * de login y bloqueo usen [backgroundName] y no un color de fondo.
+     * indicadas en [destination] usen [backgroundName] y no un color de fondo. Las
+     * pantallas no seleccionadas se conservan intactas.
      */
-    private fun buildConfiguredThemePreview(content: String, backgroundName: String): String {
+    private fun buildConfiguredThemePreview(
+        content: String,
+        backgroundName: String,
+        destination: BackgroundDestination,
+    ): String {
+        val updateLogin = destination == BackgroundDestination.LOGIN ||
+            destination == BackgroundDestination.BOTH
+        val updateLock = destination == BackgroundDestination.LOCK ||
+            destination == BackgroundDestination.BOTH
         val output = mutableListOf<String>()
         var section = ""
-        var loginApplied = false
-        var lockApplied = false
+        var loginSectionSeen = false
+        var lockSectionSeen = false
+        var loginBackgroundApplied = false
+        var lockBackgroundApplied = false
+        var loginColorApplied = false
+        var lockColorApplied = false
+
+        fun flushSection() {
+            when (section) {
+                "loginscreen" -> if (updateLogin) {
+                    if (!loginBackgroundApplied) output.add("background = \"$backgroundName\"")
+                    if (!loginColorApplied) output.add("use-background-color = false")
+                }
+
+                "lockscreen" -> if (updateLock) {
+                    if (!lockBackgroundApplied) output.add("background = \"$backgroundName\"")
+                    if (!lockColorApplied) output.add("use-background-color = false")
+                }
+            }
+        }
 
         content.lineSequence().forEach { rawLine ->
             val trimmed = rawLine.trim()
 
             if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+                flushSection()
                 section = trimmed.substring(1, trimmed.length - 1).trim().lowercase()
+                if (section == "loginscreen") loginSectionSeen = true
+                if (section == "lockscreen") lockSectionSeen = true
                 output.add(rawLine)
                 return@forEach
             }
@@ -883,15 +946,32 @@ class SddmRepositoryImpl(
             }
 
             val key = trimmed.substring(0, separatorIndex).trim().lowercase()
-            if (section == "loginscreen" || section == "lockscreen") {
+            if (section == "loginscreen" && updateLogin) {
                 when (key) {
                     "background" -> {
                         output.add("background = \"$backgroundName\"")
-                        if (section == "loginscreen") loginApplied = true else lockApplied = true
+                        loginBackgroundApplied = true
                         return@forEach
                     }
+
                     "use-background-color" -> {
                         output.add("use-background-color = false")
+                        loginColorApplied = true
+                        return@forEach
+                    }
+                }
+            }
+            if (section == "lockscreen" && updateLock) {
+                when (key) {
+                    "background" -> {
+                        output.add("background = \"$backgroundName\"")
+                        lockBackgroundApplied = true
+                        return@forEach
+                    }
+
+                    "use-background-color" -> {
+                        output.add("use-background-color = false")
+                        lockColorApplied = true
                         return@forEach
                     }
                 }
@@ -900,13 +980,15 @@ class SddmRepositoryImpl(
             output.add(rawLine)
         }
 
-        if (!loginApplied) {
+        flushSection()
+
+        if (updateLogin && !loginSectionSeen) {
             output.add("")
             output.add("[LoginScreen]")
             output.add("background = \"$backgroundName\"")
             output.add("use-background-color = false")
         }
-        if (!lockApplied) {
+        if (updateLock && !lockSectionSeen) {
             output.add("")
             output.add("[LockScreen]")
             output.add("background = \"$backgroundName\"")
