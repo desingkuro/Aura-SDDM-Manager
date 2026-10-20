@@ -272,15 +272,16 @@ class SddmRepositoryImpl(
     }
 
     override fun getGreeterPath(): String {
+        findExecutable("sddm-greeter-qt6")?.let { return it }
+        findExecutable("sddm-greeter")?.let { return it }
+
         val possiblePaths = listOf(
-            "/usr/bin/sddm-greeter-qt6",
-            "/usr/bin/sddm-greeter",
             "/usr/libexec/sddm-greeter-qt6",
             "/usr/libexec/sddm-greeter",
             "/usr/lib/sddm/sddm-greeter",
             "/usr/lib/x86_64-linux-gnu/sddm/sddm-greeter"
         )
-        return possiblePaths.firstOrNull { File(it).isFile } ?: ""
+        return possiblePaths.firstOrNull { File(it).isFile && File(it).canExecute() } ?: ""
     }
 
     override fun supportsSeparateScreens(): Boolean {
@@ -1063,14 +1064,7 @@ class SddmRepositoryImpl(
         }
     }
 
-    private fun getPkexecPath(): String {
-        val possiblePaths = listOf(
-            "/usr/bin/pkexec",
-            "/bin/pkexec",
-            "/usr/local/bin/pkexec"
-        )
-        return possiblePaths.firstOrNull { File(it).isFile } ?: ""
-    }
+    private fun getPkexecPath(): String = findExecutable("pkexec") ?: ""
 
     /** Escapa un valor para usarlo como argumento literal en un script de shell. */
     private fun shellQuote(value: String): String = "'" + value.replace("'", "'\\''") + "'"
@@ -1084,7 +1078,7 @@ class SddmRepositoryImpl(
 
         if (sddmConfDir.isDirectory) {
             sddmConfDir.listFiles()
-                ?.filter { it.isFile && it.canRead() }
+                ?.filter { it.isFile && it.canRead() && it.name.endsWith(".conf") }
                 ?.sortedBy { it.name }
                 ?.let(files::addAll)
         }
