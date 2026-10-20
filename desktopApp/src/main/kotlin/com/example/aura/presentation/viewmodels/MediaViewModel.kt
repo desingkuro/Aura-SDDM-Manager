@@ -139,7 +139,8 @@ class MediaViewModel(
                 is ApplyBackgroundResult.Success -> {
                     applySucceeded = true
                     applyMessage = "\"${result.backgroundName}\" se aplicó correctamente al tema " +
-                        "\"${result.themeName}\".\n\nReinicia SDDM o cierra sesión para ver el cambio."
+                        "\"${result.themeName}\".\n\nSe creó un respaldo automático que puedes " +
+                        "restaurar desde Ajustes Avanzados.\n\nReinicia SDDM o cierra sesión para ver el cambio."
                 }
 
                 is ApplyBackgroundResult.Failure -> {
