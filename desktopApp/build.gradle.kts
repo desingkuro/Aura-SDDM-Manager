@@ -16,6 +16,9 @@ dependencies {
     implementation(libs.compose.uiToolingPreview)
 
     implementation(libs.compose.components.resources)
+
+    testImplementation(libs.kotlin.testJunit)
+    testImplementation(libs.junit)
 }
 
 // Desde JDK 24 el acceso nativo (Skiko, FFmpeg, etc.) emite un warning si no se
