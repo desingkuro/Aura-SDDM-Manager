@@ -212,6 +212,28 @@ class SddmRepositoryImpl(
                 )
             }
 
+            // Si la carpeta de fondos aún no existe, se comprueba el directorio del
+            // tema que la contendrá, ya que Files.isWritable da false en rutas inexistentes.
+            val backgroundsWritable = if (backgroundsDir.exists()) {
+                Files.isWritable(backgroundsDir.toPath())
+            } else {
+                Files.isWritable(themeDir.toPath())
+            }
+            val configWritable = Files.isWritable(themeConfigFile.toPath())
+            val requiresElevation = !backgroundsWritable || !configWritable
+
+            if (requiresElevation && getPkexecPath().isBlank()) {
+                val protectedParts = buildList {
+                    if (!backgroundsWritable) add("la carpeta de fondos")
+                    if (!configWritable) add("la configuración del tema")
+                }
+                return ApplyBackgroundResult.Failure(
+                    "No se puede escribir en ${protectedParts.joinToString(" ni en ")} del tema " +
+                        "\"$themeName\" sin permisos de administrador. No se encontró pkexec: " +
+                        "instala PolicyKit (por ejemplo, el paquete \"polkit\") para continuar."
+                )
+            }
+
             // El respaldo se crea antes de tocar cualquier archivo. Si falla, se
             // aborta la operación para no dejar el sistema sin vuelta atrás.
             try {
@@ -229,14 +251,6 @@ class SddmRepositoryImpl(
                 )
             }
 
-            // Si la carpeta de fondos aún no existe, se comprueba el directorio del
-            // tema que la contendrá, ya que Files.isWritable da false en rutas inexistentes.
-            val backgroundsWritable = if (backgroundsDir.exists()) {
-                Files.isWritable(backgroundsDir.toPath())
-            } else {
-                Files.isWritable(themeDir.toPath())
-            }
-            val requiresElevation = !backgroundsWritable || !Files.isWritable(themeConfigFile.toPath())
             val error = if (requiresElevation) {
                 applyWithElevatedPrivileges(background, targetBackground, backgroundsDir, themeConfigFile, newConfigContent)
             } else {
@@ -432,6 +446,14 @@ class SddmRepositoryImpl(
             }
             val requiresElevation = !configWritable || !backgroundWritable
 
+            if (requiresElevation && getPkexecPath().isBlank()) {
+                return RestoreBackupResult.Failure(
+                    "El tema está protegido y no se puede restaurar sin permisos de administrador. " +
+                        "No se encontró pkexec: instala PolicyKit (por ejemplo, el paquete " +
+                        "\"polkit\") para continuar."
+                )
+            }
+
             val error = if (requiresElevation) {
                 restoreWithElevatedPrivileges(backupDir, themeConfigFile, targetBackground, targetExisted)
             } else {
@@ -511,7 +533,8 @@ class SddmRepositoryImpl(
     ): String? {
         val pkexecPath = getPkexecPath()
         if (pkexecPath.isBlank()) {
-            return "Se requieren permisos de administrador. Instala \"pkexec\" (PolicyKit) para restaurar el respaldo."
+            return "No se encontró pkexec. Instala PolicyKit (por ejemplo, el paquete \"polkit\") " +
+                "para restaurar el respaldo."
         }
 
         val backupConfig = File(backupDir, "theme-config")
@@ -691,7 +714,8 @@ class SddmRepositoryImpl(
     ): String? {
         val pkexecPath = getPkexecPath()
         if (pkexecPath.isBlank()) {
-            return "Se requieren permisos de administrador. Instala \"pkexec\" (PolicyKit) para aplicar cambios en SDDM."
+            return "No se encontró pkexec. Instala PolicyKit (por ejemplo, el paquete \"polkit\") " +
+                "para aplicar cambios en temas protegidos."
         }
 
         var tempDir: File? = null
@@ -739,11 +763,7 @@ class SddmRepositoryImpl(
             val output = process.inputStream.bufferedReader().use { it.readText() }.trim()
             val exitCode = process.waitFor()
 
-            when (exitCode) {
-                0 -> null
-                126, 127 -> "Autenticación cancelada o no fue posible completar la operación con pkexec."
-                else -> "La operación falló (código $exitCode).${if (output.isNotBlank()) " $output" else ""}"
-            }
+            if (exitCode == 0) null else describePkexecFailure(exitCode, output)
         } catch (e: Exception) {
             "No se pudo ejecutar la operación con permisos de administrador: ${e.message ?: "error desconocido"}"
         } finally {
@@ -1177,4 +1197,23 @@ class SddmRepositoryImpl(
     private fun determineMediaType(file: File): String {
         return if (file.extension.lowercase() in videoExtensions) "video" else "image"
     }
+}
+
+/**
+ * Traduce los códigos de salida de `pkexec` a mensajes accionables. Los códigos
+ * 125, 126 y 127 distinguen un problema de PolicyKit, una cancelación del usuario
+ * y una autorización denegada.
+ */
+internal fun describePkexecFailure(exitCode: Int, output: String): String {
+    val message = when (exitCode) {
+        125 -> "PolicyKit no pudo iniciar la autenticación. Comprueba que tu escritorio " +
+            "tenga un agente Polkit en ejecución (por ejemplo, polkit-gnome, polkit-kde o " +
+            "xfce-polkit)."
+
+        126 -> "Autenticación cancelada. No se aplicó ningún cambio."
+        127 -> "No se autorizó la operación. Se requieren permisos de administrador."
+        else -> "La operación con permisos de administrador falló (código $exitCode)."
+    }
+
+    return if (output.isBlank()) message else "$message Detalle: $output"
 }
