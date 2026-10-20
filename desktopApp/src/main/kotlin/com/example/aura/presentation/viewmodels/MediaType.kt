@@ -1,28 +1,27 @@
 package com.example.aura.presentation.viewmodels
 
+import java.io.File
+
 /**
- * Tipo de fondo gestionado por la aplicación. Centraliza la ruta de navegación y
- * los textos que antes se repetían entre las pantallas de imagen y video.
+ * Tipo de archivo multimedia dentro de la galería. Se usa para decidir cómo
+ * renderizar cada tarjeta y para guardar el tipo del fondo seleccionado.
  */
 enum class MediaType(
-    val route: String,
-    val singular: String,
-    val plural: String,
-    val article: String,
     val cardType: String,
 ) {
-    IMAGE(
-        route = "image",
-        singular = "imagen",
-        plural = "imágenes",
-        article = "una",
-        cardType = "image",
-    ),
-    VIDEO(
-        route = "video",
-        singular = "video",
-        plural = "videos",
-        article = "un",
-        cardType = "video",
-    ),
+    IMAGE("image"),
+    VIDEO("video");
+
+    companion object {
+        /** Ruta única de la sección de fondos en la navegación. */
+        const val ROUTE = "media"
+
+        private val videoExtensions = setOf(
+            "mp4", "mkv", "avi", "mov", "wmv", "flv", "webm", "m4v"
+        )
+
+        /** Determina el tipo a partir de la extensión del archivo. */
+        fun fromFile(file: File): MediaType =
+            if (file.extension.lowercase() in videoExtensions) VIDEO else IMAGE
+    }
 }

@@ -203,7 +203,7 @@ inyección de dependencias formal.
    para sacar lógica del repositorio y facilitar pruebas.
 2. **Inyección de dependencias** sencilla (constructor/manual) en lugar de
    instanciar repositorios dentro del ViewModel.
-3. ~~Unificar `ImageScreen` y `VideoScreeen`~~ ✅ Hecho con `MediaScreen` + `MediaType`.
+3. ~~Unificar `ImageScreen` y `VideoScreeen`~~ ✅ Hecho: una sola sección `Fondos` con galería combinada (`MediaScreen` + `MediaType`).
 4. **Corregir nombres**: `MediaRepositoryImpl`.
 5. **Eliminar el módulo `shared`** si no se va a reutilizar, o mover allí los
    modelos y utilidades realmente compartidos.

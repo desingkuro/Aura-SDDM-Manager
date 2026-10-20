@@ -23,7 +23,7 @@ import com.example.aura.presentation.viewmodels.MediaType
 @Composable
 @Preview
 fun App() {
-    val routActual = remember{ mutableStateOf("image") }
+    val routActual = remember{ mutableStateOf(MediaType.ROUTE) }
     MaterialTheme {
         Row(
             modifier = Modifier
@@ -42,10 +42,9 @@ fun App() {
             )
             Box(modifier = Modifier.fillMaxWidth(.78f).fillMaxHeight()) {
                 when (routActual.value) {
-                    MediaType.IMAGE.route -> MediaScreen(mediaType = MediaType.IMAGE, modifier = Modifier)
-                    MediaType.VIDEO.route -> MediaScreen(mediaType = MediaType.VIDEO, modifier = Modifier)
+                    MediaType.ROUTE -> MediaScreen(modifier = Modifier)
                     "ajustes_avanzados" -> SettingsScreen(modifier = Modifier)
-                    else -> MediaScreen(mediaType = MediaType.IMAGE, modifier = Modifier)
+                    else -> MediaScreen(modifier = Modifier)
                 }
             }
         }

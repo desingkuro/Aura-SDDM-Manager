@@ -14,25 +14,19 @@ import androidx.compose.ui.unit.dp
 import com.example.aura.presentation.ui.components.FooterScreen
 import com.example.aura.presentation.ui.components.HeaderScreen
 import com.example.aura.presentation.ui.components.MainScreen
-import com.example.aura.presentation.viewmodels.MediaType
 import com.example.aura.presentation.viewmodels.MediaViewModel
 
 /**
- * Pantalla compartida para gestionar fondos estáticos (imágenes) y animados
- * (videos). El [mediaType] decide qué lista cargar y qué textos mostrar.
+ * Pantalla única de fondos: muestra imágenes y videos en la misma galería.
  */
 @Composable
 fun MediaScreen(
-    mediaType: MediaType,
     modifier: Modifier = Modifier,
 ) {
     val viewModel = remember { MediaViewModel() }
 
-    LaunchedEffect(mediaType) {
-        when (mediaType) {
-            MediaType.IMAGE -> viewModel.loadImages()
-            MediaType.VIDEO -> viewModel.loadVideos()
-        }
+    LaunchedEffect(Unit) {
+        viewModel.loadMedia()
         viewModel.loadFileApplied()
     }
 
@@ -44,17 +38,8 @@ fun MediaScreen(
     ) {
         // HEADER
         HeaderScreen(
-            title = when (mediaType) {
-                MediaType.IMAGE -> "Personalización de fondo de imagen"
-                MediaType.VIDEO -> "Personalización de fondo animado"
-            },
-            subtitle = when (mediaType) {
-                MediaType.IMAGE ->
-                    "Importa, selecciona y previsualiza el fondo estático para tu pantalla de inicio."
-
-                MediaType.VIDEO ->
-                    "Gestiona videos de fondo y revisa su miniatura antes de aplicarlos."
-            }
+            title = "Personalización de fondo",
+            subtitle = "Importa, selecciona y previsualiza imágenes o videos para tu pantalla de inicio."
         )
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -62,11 +47,7 @@ fun MediaScreen(
         // MAIN CONTENT
         MainScreen(
             modifier = Modifier.weight(1f),
-            mediaType = mediaType,
-            listFiles = when (mediaType) {
-                MediaType.IMAGE -> viewModel.listImages
-                MediaType.VIDEO -> viewModel.listVideo
-            },
+            listFiles = viewModel.listImages + viewModel.listVideo,
             viewModel = viewModel
         )
 

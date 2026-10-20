@@ -67,6 +67,12 @@ class MediaViewModel(
         listVideo = mediaRepository.getVideoFiles()
     }
 
+    /** Carga imágenes y videos para la galería unificada. */
+    fun loadMedia() {
+        loadImages()
+        loadVideos()
+    }
+
     fun loadFileApplied() {
         fileApplied = sddmRepository.getAppliedBackground()
         currentTheme = sddmRepository.getCurrentTheme()

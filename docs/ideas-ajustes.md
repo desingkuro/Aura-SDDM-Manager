@@ -298,11 +298,8 @@ Luego, en una segunda iteración, apariencia (5), rutas (6) y presets (9).
 
 ---
 
-## Nota técnica detectada
+## Nota técnica
 
-En `Navigations.kt` el ítem de ajustes usa `path = "setting"`, pero `App.kt`
-compara contra `"ajustes_avanzados"`. Por eso hoy el clic cae en el `else` y
-muestra `ImageScreen`. Al crear la pantalla real conviene unificar la ruta.
-
-Además, el `Aplicar` del `FooterScreen.kt` sigue con `clickable { }` vacío:
-es el punto natural donde empezará a vivir la idea 1.
+La ruta de ajustes ya está unificada en `"ajustes_avanzados"` y `FooterScreen`
+ya aplica el fondo seleccionado. La galería de fondos también quedó unificada
+en una sola sección `Fondos` que muestra imágenes y videos juntos.

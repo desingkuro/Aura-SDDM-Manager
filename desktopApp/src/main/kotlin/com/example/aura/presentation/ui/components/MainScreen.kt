@@ -26,7 +26,6 @@ import androidx.compose.ui.unit.sp
 import aura.desktopapp.generated.resources.Res
 import aura.desktopapp.generated.resources.add_to_queue_svgrepo_com
 import aura.desktopapp.generated.resources.images_regular_full
-import aura.desktopapp.generated.resources.video_travel_image_svgrepo_com
 import com.example.aura.presentation.ui.theme.AuraColors
 import com.example.aura.presentation.utils.openFilePicker
 import com.example.aura.presentation.viewmodels.MediaType
@@ -38,15 +37,13 @@ import java.io.File
 @Composable
 fun MainScreen(
     modifier: Modifier = Modifier,
-    mediaType: MediaType,
     listFiles: List<File>,
     viewModel: MediaViewModel
 ) {
     val scrollState = rememberScrollState()
-    val isVideo = mediaType == MediaType.VIDEO
-    val emptyIcon = if (isVideo) Res.drawable.video_travel_image_svgrepo_com else Res.drawable.images_regular_full
+    val emptyIcon = Res.drawable.images_regular_full
     val selectedFile = viewModel.selectedFile
-    val selectedType = viewModel.selectedTypeFile ?: mediaType.cardType
+    val selectedType = viewModel.selectedTypeFile ?: MediaType.IMAGE.cardType
     val mediaFileApplied = viewModel.fileApplied
 
     Row(
@@ -78,14 +75,15 @@ fun MainScreen(
                         verticalArrangement = Arrangement.spacedBy(16.dp),
                     ) {
                         listFiles.forEach { file ->
+                            val type = MediaType.fromFile(file)
                             CardMultimedia(
                                 file = file,
-                                type = mediaType.cardType,
+                                type = type.cardType,
                                 modifier = Modifier
                                     .width(220.dp)
                                     .height(150.dp),
                                 isSelected = selectedFile?.absolutePath == file.absolutePath,
-                                onSelected = { viewModel.selectFile(file, mediaType.cardType) },
+                                onSelected = { viewModel.selectFile(file, type.cardType) },
                             )
                         }
                     }
@@ -110,14 +108,14 @@ fun MainScreen(
                         )
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(
-                            text = "Aún no hay ${mediaType.plural} en la galería",
+                            text = "Aún no hay fondos en la galería",
                             color = AuraColors.TextPrimary,
                             fontSize = 22.sp,
                             fontWeight = FontWeight.SemiBold
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = "Importa ${mediaType.article} ${mediaType.singular} para empezar a personalizar tu pantalla de inicio.",
+                            text = "Importa una imagen o un video para empezar a personalizar tu pantalla de inicio.",
                             color = AuraColors.TextSecondary,
                             fontSize = 14.sp,
                             textAlign = TextAlign.Center
@@ -147,7 +145,7 @@ fun MainScreen(
                 )
                 Spacer(modifier = Modifier.width(14.dp))
                 Text(
-                    text = "Importar ${mediaType.singular}",
+                    text = "Importar imagen o video",
                     color = AuraColors.TextPrimary,
                     fontSize = 17.sp,
                     fontWeight = FontWeight.SemiBold
