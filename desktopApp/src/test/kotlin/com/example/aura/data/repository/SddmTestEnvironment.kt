@@ -28,6 +28,7 @@ internal class SddmTestEnvironment {
     }
     val sddmConfDir: File = File(root, "sddm.conf.d").apply { mkdirs() }
     val repository: SddmRepositoryImpl
+    var initialConfigPermissions: String = ""
 
     init {
         File(themeDir, "metadata.desktop").writeText(
@@ -48,6 +49,9 @@ internal class SddmTestEnvironment {
             background = "old.jpg"
             use-background-color = false
             """.trimIndent()
+        )
+        initialConfigPermissions = PosixFilePermissions.toString(
+            Files.getPosixFilePermissions(themeConfig.toPath())
         )
 
         repository = SddmRepositoryImpl(
@@ -88,7 +92,7 @@ internal class SddmTestEnvironment {
 
     fun assertConfigPermissions() {
         val permissions = Files.getPosixFilePermissions(themeConfig.toPath())
-        assertEquals("rw-r--r--", PosixFilePermissions.toString(permissions))
+        assertEquals(initialConfigPermissions, PosixFilePermissions.toString(permissions))
     }
 
     fun close() {

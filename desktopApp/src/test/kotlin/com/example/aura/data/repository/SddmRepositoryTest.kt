@@ -5,7 +5,9 @@ import com.example.aura.domain.models.BackgroundDestination
 import org.junit.Test
 import java.io.File
 import java.nio.file.Files
+import java.nio.file.attribute.PosixFilePermissions
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -342,6 +344,78 @@ class SddmRepositoryTest {
             assertTrue(result is ApplyBackgroundResult.Failure)
             assertTrue(result.message.contains("ya no existe"))
         } finally {
+            env.close()
+        }
+    }
+
+    @Test
+    fun `conserva los permisos originales de la configuracion`() {
+        val env = SddmTestEnvironment()
+        try {
+            Files.setPosixFilePermissions(
+                env.themeConfig.toPath(),
+                PosixFilePermissions.fromString("rw-r-----"),
+            )
+            env.source.writeText("new-bytes")
+
+            val result = env.repository.applyBackground(env.source)
+
+            assertTrue(result is ApplyBackgroundResult.Success)
+            assertEquals(
+                "rw-r-----",
+                PosixFilePermissions.toString(Files.getPosixFilePermissions(env.themeConfig.toPath())),
+            )
+        } finally {
+            env.close()
+        }
+    }
+
+    @Test
+    fun `conserva los permisos del fondo existente`() {
+        val env = SddmTestEnvironment()
+        try {
+            val target = File(env.backgroundsDir, "source.jpg").apply { writeText("old") }
+            Files.setPosixFilePermissions(
+                target.toPath(),
+                PosixFilePermissions.fromString("rw-------"),
+            )
+            env.source.writeText("new-bytes")
+
+            val result = env.repository.applyBackground(env.source)
+
+            assertTrue(result is ApplyBackgroundResult.Success)
+            assertEquals("new-bytes", target.readText())
+            assertEquals(
+                "rw-------",
+                PosixFilePermissions.toString(Files.getPosixFilePermissions(target.toPath())),
+            )
+        } finally {
+            env.close()
+        }
+    }
+
+    @Test
+    fun `revierte el fondo si falla la escritura de la configuracion`() {
+        val env = SddmTestEnvironment()
+        val configDir = env.themeConfig.parentFile
+        try {
+            val originalConfig = env.themeConfig.readText()
+            env.source.writeText("new-bytes")
+            Files.setPosixFilePermissions(
+                configDir.toPath(),
+                PosixFilePermissions.fromString("r-x------"),
+            )
+
+            val result = env.repository.applyBackground(env.source)
+
+            assertTrue(result is ApplyBackgroundResult.Failure)
+            assertFalse(File(env.backgroundsDir, "source.jpg").exists())
+            assertEquals(originalConfig, env.themeConfig.readText())
+        } finally {
+            Files.setPosixFilePermissions(
+                configDir.toPath(),
+                PosixFilePermissions.fromString("rwx------"),
+            )
             env.close()
         }
     }

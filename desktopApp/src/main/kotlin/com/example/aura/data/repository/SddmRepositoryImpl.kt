@@ -14,12 +14,18 @@ import com.example.aura.domain.models.SddmDiagnostics
 import com.example.aura.domain.models.SddmTheme
 import com.example.aura.domain.repository.SddmRepository
 import java.io.File
+import java.io.IOException
 import java.nio.charset.StandardCharsets
 import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
+import java.nio.file.attribute.GroupPrincipal
+import java.nio.file.attribute.PosixFileAttributeView
+import java.nio.file.attribute.PosixFileAttributes
+import java.nio.file.attribute.PosixFilePermission
 import java.nio.file.attribute.PosixFilePermissions
+import java.nio.file.attribute.UserPrincipal
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -257,15 +263,15 @@ class SddmRepositoryImpl(
             )
         }
 
-        try {
-            val backupDir = createThemeBackup(previousTheme, themeName, configFile)
-            println("Respaldo de tema creado en ${backupDir.absolutePath}")
+        val backupDir = try {
+            createThemeBackup(previousTheme, themeName, configFile)
         } catch (e: Exception) {
             return ChangeThemeResult.Failure(
                 "No se pudo crear el respaldo del tema. No se cambió la configuración. " +
                     "Detalle: ${e.message ?: "error desconocido"}"
             )
         }
+        println("Respaldo de tema creado en ${backupDir.absolutePath}")
 
         val content = "[Theme]\nCurrent=$themeName\n"
         val error = if (configWritable) {
@@ -282,20 +288,32 @@ class SddmRepositoryImpl(
             return ChangeThemeResult.Failure(error)
         }
 
+        val effectiveTheme = getCurrentTheme()
+        if (effectiveTheme != themeName) {
+            val configExisted = File(backupDir, "sddm-config").isFile
+            val rollback = runCatching {
+                restoreThemeConfigDirectly(backupDir, configFile, configExisted)
+            }
+            val rollbackDetail = if (rollback.isSuccess) {
+                " Se revirtió la configuración anterior."
+            } else {
+                " Además, no se pudo revertir la configuración anterior: " +
+                    "${rollback.exceptionOrNull()?.message ?: "error desconocido"}"
+            }
+            return ChangeThemeResult.Failure(
+                "Se guardó el tema en ${configFile.absolutePath}, pero SDDM sigue leyendo " +
+                    "\"$effectiveTheme\". Revisa si otro archivo de configuración tiene prioridad." +
+                    rollbackDetail
+            )
+        }
+
         // El fondo registrado pertenece al tema anterior. Al cambiar de tema se
-        // deja que el nuevo tema determine su propio fondo.
+        // deja que el nuevo tema determine su propio fondo. Solo se limpia cuando
+        // el cambio ya fue confirmado por SDDM.
         try {
             Files.deleteIfExists(appliedBackgroundFile.toPath())
         } catch (e: Exception) {
             println("No se pudo limpiar el fondo aplicado anterior: ${e.message}")
-        }
-
-        val effectiveTheme = getCurrentTheme()
-        if (effectiveTheme != themeName) {
-            return ChangeThemeResult.Failure(
-                "Se guardó el tema en ${configFile.absolutePath}, pero SDDM sigue leyendo " +
-                    "\"$effectiveTheme\". Revisa si otro archivo de configuración tiene prioridad."
-            )
         }
 
         return ChangeThemeResult.Success(previousTheme, theme.copy(isCurrent = true))
@@ -476,25 +494,39 @@ class SddmRepositoryImpl(
 
             // El respaldo se crea antes de tocar cualquier archivo. Si falla, se
             // aborta la operación para no dejar el sistema sin vuelta atrás.
-            try {
-                val backupDir = createBackup(
+            val backupDir = try {
+                createBackup(
                     themeName = themeName,
                     themeDir = themeDir,
                     themeConfigFile = themeConfigFile,
                     targetBackground = targetBackground,
                 )
-                println("Respaldo creado en ${backupDir.absolutePath}")
             } catch (e: Exception) {
                 return ApplyBackgroundResult.Failure(
                     "No se pudo crear el respaldo de la configuración de SDDM. " +
                         "No se aplicó ningún cambio. Detalle: ${e.message ?: "error desconocido"}"
                 )
             }
+            println("Respaldo creado en ${backupDir.absolutePath}")
 
             val error = if (requiresElevation) {
-                applyWithElevatedPrivileges(background, targetBackground, backgroundsDir, themeConfigFile, newConfigContent)
+                applyWithElevatedPrivileges(
+                    source = background,
+                    targetBackground = targetBackground,
+                    backgroundsDir = backgroundsDir,
+                    configFile = themeConfigFile,
+                    newConfigContent = newConfigContent,
+                    backupDir = backupDir,
+                )
             } else {
-                applyDirectly(background, targetBackground, backgroundsDir, themeConfigFile, newConfigContent)
+                applyDirectly(
+                    source = background,
+                    targetBackground = targetBackground,
+                    backgroundsDir = backgroundsDir,
+                    configFile = themeConfigFile,
+                    newConfigContent = newConfigContent,
+                    backupDir = backupDir,
+                )
             }
 
             if (error != null) {
@@ -921,6 +953,7 @@ class SddmRepositoryImpl(
             )
         Files.createDirectories(parent.toPath())
 
+        val metadata = readPosixMetadata(resolvedTarget.toPath())
         val temporary = Files.createTempFile(
             parent.toPath(),
             ".${resolvedTarget.name}.aura-",
@@ -928,7 +961,7 @@ class SddmRepositoryImpl(
         )
         try {
             Files.writeString(temporary, content, StandardCharsets.UTF_8)
-            setConfigPermissions(temporary)
+            applyPosixMetadata(temporary, metadata)
             moveReplacing(temporary, resolvedTarget.toPath())
         } catch (e: Exception) {
             Files.deleteIfExists(temporary)
@@ -948,6 +981,7 @@ class SddmRepositoryImpl(
             )
         Files.createDirectories(parent.toPath())
 
+        val metadata = readPosixMetadata(resolvedTarget.toPath())
         val temporary = Files.createTempFile(
             parent.toPath(),
             ".${resolvedTarget.name}.aura-",
@@ -955,7 +989,7 @@ class SddmRepositoryImpl(
         )
         try {
             Files.copy(source.toPath(), temporary, StandardCopyOption.REPLACE_EXISTING)
-            setConfigPermissions(temporary)
+            applyPosixMetadata(temporary, metadata)
             moveReplacing(temporary, resolvedTarget.toPath())
         } catch (e: Exception) {
             Files.deleteIfExists(temporary)
@@ -963,7 +997,31 @@ class SddmRepositoryImpl(
         }
     }
 
-    private fun setConfigPermissions(file: Path) {
+    /**
+     * Clona uid, gid y permisos del archivo original. En un archivo nuevo aplica
+     * el modo 644 para que SDDM pueda leerlo.
+     */
+    private fun applyPosixMetadata(path: Path, metadata: FilePosixMetadata?) {
+        if (metadata == null) {
+            setDefaultPermissions(path)
+            return
+        }
+
+        try {
+            Files.setOwner(path, metadata.owner)
+            Files.getFileAttributeView(path, PosixFileAttributeView::class.java)
+                ?.setGroup(metadata.group)
+            Files.setPosixFilePermissions(path, metadata.permissions)
+        } catch (e: Exception) {
+            throw IOException(
+                "No se pudieron conservar el propietario, grupo o permisos originales de " +
+                    path.fileName,
+                e,
+            )
+        }
+    }
+
+    private fun setDefaultPermissions(file: Path) {
         try {
             Files.setPosixFilePermissions(
                 file,
@@ -980,6 +1038,17 @@ class SddmRepositoryImpl(
         } catch (_: AtomicMoveNotSupportedException) {
             Files.move(source, target, StandardCopyOption.REPLACE_EXISTING)
         }
+    }
+
+    private fun readPosixMetadata(path: Path): FilePosixMetadata? = try {
+        val attributes = Files.readAttributes(path, PosixFileAttributes::class.java)
+        FilePosixMetadata(
+            permissions = attributes.permissions().toSet(),
+            owner = attributes.owner(),
+            group = attributes.group(),
+        )
+    } catch (_: Exception) {
+        null
     }
 
     /**
@@ -1004,8 +1073,20 @@ class SddmRepositoryImpl(
 
         script.appendLine("tmp_config=${shellQuote(temporary.absolutePath)}")
         script.appendLine("trap 'rm -f -- \"\$tmp_config\"' 0")
+        script.appendLine("if [ -e ${shellQuote(resolvedTarget.absolutePath)} ]; then")
+        script.appendLine("  config_meta=\$(stat -c '%u:%g:%a' -- ${shellQuote(resolvedTarget.absolutePath)})")
+        script.appendLine("  config_uid=\${config_meta%%:*}")
+        script.appendLine("  config_rest=\${config_meta#*:}")
+        script.appendLine("  config_gid=\${config_rest%%:*}")
+        script.appendLine("  config_mode=\${config_rest#*:}")
+        script.appendLine("else")
+        script.appendLine("  config_uid=0")
+        script.appendLine("  config_gid=0")
+        script.appendLine("  config_mode=644")
+        script.appendLine("fi")
         script.appendLine("cp -f -- $contentSource \"\$tmp_config\"")
-        script.appendLine("chmod 644 -- \"\$tmp_config\"")
+        script.appendLine("chown -- \"\$config_uid:\$config_gid\" \"\$tmp_config\"")
+        script.appendLine("chmod -- \"\$config_mode\" \"\$tmp_config\"")
         script.appendLine("mv -f -- \"\$tmp_config\" ${shellQuote(resolvedTarget.absolutePath)}")
         script.appendLine("trap - 0")
     }
@@ -1023,14 +1104,69 @@ class SddmRepositoryImpl(
         backgroundsDir: File,
         configFile: File,
         newConfigContent: String,
+        backupDir: File,
     ): String? {
         return try {
             backgroundsDir.mkdirs()
-            Files.copy(source.toPath(), targetBackground.toPath(), StandardCopyOption.REPLACE_EXISTING)
-            writeConfigAtomically(configFile, newConfigContent)
-            null
+            val targetPath = targetBackground.toPath()
+            val originalMetadata = readPosixMetadata(targetPath)
+            val temporary = Files.createTempFile(
+                backgroundsDir.toPath(),
+                ".${targetBackground.name}.aura-",
+                ".tmp",
+            )
+            try {
+                Files.copy(source.toPath(), temporary, StandardCopyOption.REPLACE_EXISTING)
+                applyPosixMetadata(temporary, originalMetadata)
+                moveReplacing(temporary, targetPath)
+            } catch (e: Exception) {
+                Files.deleteIfExists(temporary)
+                throw e
+            }
+
+            try {
+                writeConfigAtomically(configFile, newConfigContent)
+                null
+            } catch (e: Exception) {
+                val rollback = runCatching { rollbackBackground(targetBackground, backupDir) }
+                if (rollback.isSuccess) {
+                    "No se pudo escribir la configuración del tema: " +
+                        "${e.message ?: "error desconocido"}. Se restauró el fondo anterior."
+                } else {
+                    "No se pudo escribir la configuración del tema: " +
+                        "${e.message ?: "error desconocido"}. Además, no se pudo restaurar " +
+                        "el fondo anterior: ${rollback.exceptionOrNull()?.message ?: "error desconocido"}"
+                }
+            }
         } catch (e: Exception) {
             "No se pudo aplicar el fondo: ${e.message ?: "error desconocido"}"
+        }
+    }
+
+    /**
+     * Deshace la copia del fondo nuevo usando el respaldo creado antes de empezar.
+     * Si el fondo destino no existía, se elimina el archivo recién creado.
+     */
+    private fun rollbackBackground(targetBackground: File, backupDir: File) {
+        val backup = File(backupDir, "background")
+        if (backup.isFile) {
+            val metadata = readPosixMetadata(targetBackground.toPath())
+            val parent = targetBackground.parentFile
+                ?: throw IllegalArgumentException("El fondo no tiene directorio padre.")
+            val temporary = Files.createTempFile(
+                parent.toPath(),
+                ".${targetBackground.name}.aura-rollback-",
+                ".tmp",
+            )
+            try {
+                Files.copy(backup.toPath(), temporary, StandardCopyOption.REPLACE_EXISTING)
+                applyPosixMetadata(temporary, metadata)
+                moveReplacing(temporary, targetBackground.toPath())
+            } finally {
+                Files.deleteIfExists(temporary)
+            }
+        } else {
+            Files.deleteIfExists(targetBackground.toPath())
         }
     }
 
@@ -1045,6 +1181,7 @@ class SddmRepositoryImpl(
         backgroundsDir: File,
         configFile: File,
         newConfigContent: String,
+        backupDir: File,
     ): String? {
         val pkexecPath = getPkexecPath()
         if (pkexecPath.isBlank()) {
@@ -1059,17 +1196,80 @@ class SddmRepositoryImpl(
             val stagedConfig = File(tempDir, "theme.conf")
             stagedConfig.writeText(newConfigContent)
 
+            val resolvedTarget = targetBackground.canonicalFile
+            val resolvedConfig = configFile.canonicalFile
+            val temporaryBackground = File(
+                backgroundsDir,
+                ".${resolvedTarget.name}.aura-${UUID.randomUUID()}.tmp",
+            )
+            val temporaryConfig = File(
+                resolvedConfig.parentFile,
+                ".${resolvedConfig.name}.aura-${UUID.randomUUID()}.tmp",
+            )
+            val backupBackground = File(backupDir, "background")
+
             val scriptContent = buildString {
                 appendLine("#!/bin/sh")
                 appendLine("set -e")
+                appendLine("bg_target=${shellQuote(resolvedTarget.absolutePath)}")
+                appendLine("bg_tmp=${shellQuote(temporaryBackground.absolutePath)}")
+                appendLine("config_target=${shellQuote(resolvedConfig.absolutePath)}")
+                appendLine("tmp_config=${shellQuote(temporaryConfig.absolutePath)}")
+                appendLine("bg_backup=${shellQuote(backupBackground.absolutePath)}")
+                appendLine("bg_replaced=0")
+                appendLine("rollback_bg() {")
+                appendLine("  if [ \"\$bg_replaced\" -eq 1 ]; then")
+                appendLine("    if [ -f \"\$bg_backup\" ]; then")
+                appendLine("      cp -p -- \"\$bg_backup\" \"\$bg_target\"")
+                appendLine("    else")
+                appendLine("      rm -f -- \"\$bg_target\"")
+                appendLine("    fi")
+                appendLine("  fi")
+                appendLine("}")
+                appendLine("cleanup() { rm -f -- \"\$bg_tmp\" \"\$tmp_config\"; }")
+                appendLine("on_exit() {")
+                appendLine("  status=\$?")
+                appendLine("  trap - 0")
+                appendLine("  rollback_bg")
+                appendLine("  cleanup")
+                appendLine("  exit \$status")
+                appendLine("}")
+                appendLine("trap on_exit 0")
+                appendLine("trap 'exit 1' 1 2 3 15")
                 appendLine("mkdir -p -- ${shellQuote(backgroundsDir.absolutePath)}")
-                appendLine("cp -f -- ${shellQuote(source.absolutePath)} ${shellQuote(targetBackground.absolutePath)}")
-                appendLine("chmod 644 -- ${shellQuote(targetBackground.absolutePath)}")
-                appendAtomicConfigReplacement(
-                    script = this,
-                    configFile = configFile,
-                    contentSource = shellQuote(stagedConfig.absolutePath),
-                )
+                appendLine("if [ -e \"\$bg_target\" ]; then")
+                appendLine("  bg_meta=\$(stat -c '%u:%g:%a' -- \"\$bg_target\")")
+                appendLine("  bg_uid=\${bg_meta%%:*}")
+                appendLine("  bg_rest=\${bg_meta#*:}")
+                appendLine("  bg_gid=\${bg_rest%%:*}")
+                appendLine("  bg_mode=\${bg_rest#*:}")
+                appendLine("else")
+                appendLine("  bg_uid=0")
+                appendLine("  bg_gid=0")
+                appendLine("  bg_mode=644")
+                appendLine("fi")
+                appendLine("cp -f -- ${shellQuote(source.absolutePath)} \"\$bg_tmp\"")
+                appendLine("chown -- \"\$bg_uid:\$bg_gid\" \"\$bg_tmp\"")
+                appendLine("chmod -- \"\$bg_mode\" \"\$bg_tmp\"")
+                appendLine("mv -f -- \"\$bg_tmp\" \"\$bg_target\"")
+                appendLine("bg_replaced=1")
+                appendLine("if [ -e \"\$config_target\" ]; then")
+                appendLine("  config_meta=\$(stat -c '%u:%g:%a' -- \"\$config_target\")")
+                appendLine("  config_uid=\${config_meta%%:*}")
+                appendLine("  config_rest=\${config_meta#*:}")
+                appendLine("  config_gid=\${config_rest%%:*}")
+                appendLine("  config_mode=\${config_rest#*:}")
+                appendLine("else")
+                appendLine("  config_uid=0")
+                appendLine("  config_gid=0")
+                appendLine("  config_mode=644")
+                appendLine("fi")
+                appendLine("cp -f -- ${shellQuote(stagedConfig.absolutePath)} \"\$tmp_config\"")
+                appendLine("chown -- \"\$config_uid:\$config_gid\" \"\$tmp_config\"")
+                appendLine("chmod -- \"\$config_mode\" \"\$tmp_config\"")
+                appendLine("mv -f -- \"\$tmp_config\" \"\$config_target\"")
+                appendLine("trap - 0")
+                appendLine("cleanup")
             }
             runPkexecScript(pkexecPath, scriptContent)
         } catch (e: Exception) {
@@ -1791,6 +1991,12 @@ class SddmRepositoryImpl(
         return if (file.extension.lowercase() in videoExtensions) "video" else "image"
     }
 }
+
+private data class FilePosixMetadata(
+    val permissions: Set<PosixFilePermission>,
+    val owner: UserPrincipal,
+    val group: GroupPrincipal,
+)
 
 /**
  * Traduce los códigos de salida de `pkexec` a mensajes accionables. Los códigos
