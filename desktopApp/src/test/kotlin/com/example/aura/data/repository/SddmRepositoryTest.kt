@@ -4,6 +4,7 @@ import com.example.aura.domain.models.ApplyBackgroundResult
 import com.example.aura.domain.models.BackgroundDestination
 import org.junit.Test
 import java.io.File
+import java.nio.file.Files
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -340,6 +341,41 @@ class SddmRepositoryTest {
 
             assertTrue(result is ApplyBackgroundResult.Failure)
             assertTrue(result.message.contains("ya no existe"))
+        } finally {
+            env.close()
+        }
+    }
+
+    @Test
+    fun `rechaza un ConfigFile con path traversal`() {
+        val env = SddmTestEnvironment()
+        try {
+            File(env.themeDir, "metadata.desktop").writeText(
+                "[SddmGreeterTheme]\nConfigFile=../../../../etc/shadow\n"
+            )
+            env.source.writeText("new-bytes")
+
+            val result = env.repository.applyBackground(env.source)
+
+            assertTrue(result is ApplyBackgroundResult.Failure)
+            assertTrue(result.message.contains("fuera"))
+        } finally {
+            env.close()
+        }
+    }
+
+    @Test
+    fun `ignora temas cuyo directorio sale de la raiz de temas`() {
+        val env = SddmTestEnvironment()
+        try {
+            val outsideTheme = File(env.root, "outside-theme").apply { mkdirs() }
+            File(outsideTheme, "theme.conf").writeText("[General]\nbackground=x.jpg\n")
+            Files.createSymbolicLink(
+                File(env.themesDir, "evil").toPath(),
+                outsideTheme.toPath(),
+            )
+
+            assertTrue(env.repository.getInstalledThemes().none { it.name == "evil" })
         } finally {
             env.close()
         }

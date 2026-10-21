@@ -1,5 +1,7 @@
 package com.example.aura.data.repository
 
+import com.example.aura.data.security.PathValidationException
+import com.example.aura.data.security.PathValidator
 import com.example.aura.domain.models.ApplyBackgroundResult
 import com.example.aura.domain.models.BackgroundDestination
 import com.example.aura.domain.models.ChangeThemeResult
@@ -35,6 +37,7 @@ class SddmRepositoryImpl(
     private val sddmConfFile: File = File("/etc/sddm.conf"),
     private val sddmConfDir: File = File("/etc/sddm.conf.d"),
     private val backupsDir: File = File(System.getProperty("user.home"), ".local/share/Aura/backups"),
+    private val pathValidator: PathValidator = PathValidator(themesDir, sddmConfFile, sddmConfDir),
 ) : SddmRepository {
 
     private val videoExtensions = listOf("mp4", "mkv", "avi", "mov", "wmv", "flv", "webm", "m4v")
@@ -90,20 +93,30 @@ class SddmRepositoryImpl(
             ?.asSequence()
             ?.filter { it.isDirectory && !it.name.startsWith(".") }
             ?.mapNotNull { themeDir ->
-                val configuredPath = readConfiguredThemePath(themeDir)
-                val configuredConfig = configuredPath
-                    ?.let { File(themeDir, it) }
-                    ?.takeIf { it.isFile }
-                val traditionalConfig = File(themeDir, "theme.conf").takeIf { it.isFile }
+                val safeThemeDir = pathValidator.resolveThemeDir(themeDir.name)
+                    ?: return@mapNotNull null
+                val configuredPath = readConfiguredThemePath(safeThemeDir)
+                val configuredConfig = configuredPath?.let { path ->
+                    runCatching { pathValidator.resolveThemeConfig(safeThemeDir, path) }
+                        .getOrNull()
+                        ?.takeIf { it.isFile }
+                }
+                val traditionalConfig = runCatching {
+                    pathValidator.requireInside(
+                        safeThemeDir,
+                        File(safeThemeDir, "theme.conf"),
+                        "configuración tradicional del tema",
+                    )
+                }.getOrNull()?.takeIf { it.isFile }
                 if (configuredConfig == null && traditionalConfig == null) {
                     return@mapNotNull null
                 }
 
                 SddmTheme(
-                    name = themeDir.name,
-                    displayName = readThemeDisplayName(themeDir),
-                    path = themeDir.absolutePath,
-                    isCurrent = themeDir.name == currentTheme,
+                    name = safeThemeDir.name,
+                    displayName = readThemeDisplayName(safeThemeDir),
+                    path = safeThemeDir.absolutePath,
+                    isCurrent = safeThemeDir.name == currentTheme,
                     supportsSeparateScreens = configuredConfig != null,
                 )
             }
@@ -117,20 +130,27 @@ class SddmRepositoryImpl(
 
     override fun getDiagnostics(): SddmDiagnostics {
         val currentTheme = getCurrentTheme()
-        val themeDir = File(themesDir, currentTheme)
-        val themeExists = themeDir.isDirectory
-        val themeConfig = if (themeExists) findThemeConfigFile(themeDir) else null
+        val themeDir = resolveThemeDir(currentTheme)
+        val themeExists = themeDir != null
+        val themeConfig = themeDir?.let {
+            runCatching { findThemeConfigFile(it) }.getOrNull()
+        }
         val greeterPath = getGreeterPath()
         val pkexecPath = getPkexecPath()
         val polkitAgent = findPolkitAgent()
         val ffmpegPath = findExecutable("ffmpeg")
-        val backgroundsDir = themeDir.listFiles()
-            ?.firstOrNull { it.isDirectory && it.name.equals("backgrounds", ignoreCase = true) }
-            ?: File(themeDir, "backgrounds")
-        val backgroundsWritable = if (backgroundsDir.exists()) {
-            Files.isWritable(backgroundsDir.toPath())
-        } else {
-            Files.isWritable(themeDir.toPath())
+        val safeBackgroundsDir = themeDir?.let { dir ->
+            val backgroundsDir = dir.listFiles()
+                ?.firstOrNull { it.isDirectory && it.name.equals("backgrounds", ignoreCase = true) }
+                ?: File(dir, "backgrounds")
+            runCatching {
+                pathValidator.requireInside(dir, backgroundsDir, "carpeta de fondos")
+            }.getOrNull()
+        }
+        val backgroundsWritable = when {
+            themeDir == null || safeBackgroundsDir == null -> false
+            safeBackgroundsDir.exists() -> Files.isWritable(safeBackgroundsDir.toPath())
+            else -> Files.isWritable(themeDir.toPath())
         }
         val sddmConfigReadable = (sddmConfFile.isFile && sddmConfFile.canRead()) ||
             (sddmConfDir.isDirectory && sddmConfDir.canRead())
@@ -195,7 +215,7 @@ class SddmRepositoryImpl(
             ),
             SddmDiagnostic(
                 label = "Carpeta de fondos",
-                value = backgroundsDir.absolutePath,
+                value = safeBackgroundsDir?.absolutePath ?: "No disponible",
                 status = if (backgroundsWritable) DiagnosticStatus.OK else DiagnosticStatus.WARNING,
                 hint = if (backgroundsWritable) null else "Se solicitarán permisos de administrador.",
             ),
@@ -222,7 +242,13 @@ class SddmRepositoryImpl(
             return ChangeThemeResult.Success(previousTheme, theme.copy(isCurrent = true))
         }
 
-        val configFile = themeConfigTarget()
+        val configFile = try {
+            themeConfigTarget()
+        } catch (error: PathValidationException) {
+            return ChangeThemeResult.Failure(
+                "No se puede escribir la configuración de SDDM: ${error.message}"
+            )
+        }
         val configWritable = isConfigFileWritable(configFile)
         if (!configWritable && getPkexecPath().isBlank()) {
             return ChangeThemeResult.Failure(
@@ -289,11 +315,11 @@ class SddmRepositoryImpl(
     }
 
     override fun supportsSeparateScreens(): Boolean {
-        val themeDir = File(themesDir, getCurrentTheme())
-        if (!themeDir.isDirectory) return false
-
+        val themeDir = resolveThemeDir(getCurrentTheme()) ?: return false
         val configuredPath = readConfiguredThemePath(themeDir) ?: return false
-        return File(themeDir, configuredPath).isFile
+        return runCatching {
+            pathValidator.resolveThemeConfig(themeDir, configuredPath)
+        }.getOrNull()?.isFile == true
     }
 
     override suspend fun launchPreview(
@@ -367,25 +393,31 @@ class SddmRepositoryImpl(
 
         return try {
             val themeName = getCurrentTheme()
-            val themeDir = File(themesDir, themeName)
-            if (!themeDir.isDirectory) {
-                return ApplyBackgroundResult.Failure(
-                    "No se encontró el tema \"$themeName\" en ${themesDir.absolutePath}."
+            val themeDir = pathValidator.resolveThemeDir(themeName)
+                ?: return ApplyBackgroundResult.Failure(
+                    "No se encontró el tema \"$themeName\" dentro de ${themesDir.absolutePath}."
                 )
-            }
 
             val sourceBackgroundsDir = themeDir.listFiles()
                 ?.firstOrNull { it.isDirectory && it.name.equals("backgrounds", ignoreCase = true) }
             val backgroundsDirName = sourceBackgroundsDir?.name ?: "backgrounds"
-            val backgroundsDir = File(themeDir, backgroundsDirName)
-            val targetBackground = File(backgroundsDir, background.name)
+            val backgroundsDir = pathValidator.requireInside(
+                themeDir,
+                File(themeDir, backgroundsDirName),
+                "carpeta de fondos",
+            )
+            val targetBackground = pathValidator.requireInside(
+                backgroundsDir,
+                File(backgroundsDir, background.name),
+                "fondo de destino",
+            )
 
             val configuredRelativePath = readConfiguredThemePath(themeDir)
             val themeConfigFile: File
             val newConfigContent: String
 
             if (configuredRelativePath != null) {
-                themeConfigFile = File(themeDir, configuredRelativePath)
+                themeConfigFile = pathValidator.resolveThemeConfig(themeDir, configuredRelativePath)
                 if (!themeConfigFile.isFile) {
                     return ApplyBackgroundResult.Failure(
                         "No se encontró el archivo de configuración del tema \"$themeName\"."
@@ -403,7 +435,11 @@ class SddmRepositoryImpl(
                             "y bloqueo. Selecciona \"Ambos\" para aplicar el fondo."
                     )
                 }
-                themeConfigFile = File(themeDir, "theme.conf")
+                themeConfigFile = pathValidator.requireInside(
+                    themeDir,
+                    File(themeDir, "theme.conf"),
+                    "configuración tradicional del tema",
+                )
                 if (!themeConfigFile.isFile) {
                     return ApplyBackgroundResult.Failure(
                         "El tema \"$themeName\" no tiene una configuración de fondo compatible."
@@ -781,22 +817,23 @@ class SddmRepositoryImpl(
         themeDir: File,
         themeConfigFile: File,
         targetBackground: File,
-    ): String? {
-        val themesRoot = themesDir.canonicalFile
-        val themeRoot = themeDir.canonicalFile
-        if (themeRoot.parentFile?.canonicalFile != themesRoot) {
-            return "El respaldo apunta a un tema fuera del directorio permitido."
-        }
+    ): String? = try {
+        val safeThemeDir = pathValidator.resolveThemeDir(themeDir.name)
+            ?: return "El respaldo apunta a un tema fuera del directorio permitido."
 
-        val themeRootPath = themeRoot.toPath()
-        if (!themeConfigFile.canonicalFile.toPath().startsWith(themeRootPath)) {
-            return "El respaldo apunta a una configuración fuera del tema."
-        }
-        if (!targetBackground.canonicalFile.toPath().startsWith(themeRootPath)) {
-            return "El respaldo apunta a un fondo fuera del tema."
-        }
-
-        return null
+        pathValidator.requireInside(
+            safeThemeDir,
+            themeConfigFile,
+            "configuración del respaldo",
+        )
+        pathValidator.requireInside(
+            safeThemeDir,
+            targetBackground,
+            "fondo del respaldo",
+        )
+        null
+    } catch (error: PathValidationException) {
+        error.message
     }
 
     private fun restoreDirectly(
@@ -1091,8 +1128,7 @@ class SddmRepositoryImpl(
     }
 
     private fun readBackgroundFromTheme(themeName: String): Pair<File, String>? {
-        val themeDir = File(themesDir, themeName)
-        if (!themeDir.isDirectory) return null
+        val themeDir = pathValidator.resolveThemeDir(themeName) ?: return null
 
         val configuredFile = readConfiguredThemeFile(themeDir)
         if (configuredFile != null) {
@@ -1104,18 +1140,22 @@ class SddmRepositoryImpl(
                 "background"
             ).firstNotNullOfOrNull { key -> config[key]?.takeIf { it.isNotBlank() } }
 
-            resolveBackgroundFile(themeDir, backgroundValue)?.let { file ->
+            pathValidator.resolveBackground(themeDir, backgroundValue)?.let { file ->
                 return Pair(file, determineMediaType(file))
             }
         }
 
-        val themeConf = File(themeDir, "theme.conf")
+        val themeConf = pathValidator.requireInside(
+            themeDir,
+            File(themeDir, "theme.conf"),
+            "configuración tradicional del tema",
+        )
         if (themeConf.isFile) {
             val config = readIniFile(themeConf)
             val backgroundValue = listOf("general/background", "background")
                 .firstNotNullOfOrNull { key -> config[key]?.takeIf { it.isNotBlank() } }
 
-            resolveBackgroundFile(themeDir, backgroundValue)?.let { file ->
+            pathValidator.resolveBackground(themeDir, backgroundValue)?.let { file ->
                 return Pair(file, determineMediaType(file))
             }
         }
@@ -1136,10 +1176,25 @@ class SddmRepositoryImpl(
         return try {
             cleanupStalePreviewThemes()
             val tempThemeDir = Files.createTempDirectory("aura-sddm-preview-").toFile()
-            val configuredRelativePath = readConfiguredThemePath(sourceThemeDir)
-            val configuredDirName = configuredRelativePath?.substringBefore('/')?.takeIf { it.isNotBlank() }
+            val configuredPath = readConfiguredThemePath(sourceThemeDir)
+            val sourceConfig = configuredPath?.let {
+                pathValidator.resolveThemeConfig(sourceThemeDir, it)
+            }?.takeIf { it.isFile }
+            val configuredRelativePath = sourceConfig?.let {
+                relativeToTheme(sourceThemeDir, it)
+            }
+            val configuredDirName = configuredRelativePath
+                ?.substringBefore('/')
+                ?.takeIf { it.isNotBlank() }
             val sourceBackgroundsDir = sourceThemeDir.listFiles()
                 ?.firstOrNull { it.isDirectory && it.name.equals("backgrounds", ignoreCase = true) }
+                ?.let {
+                    pathValidator.requireInside(
+                        sourceThemeDir,
+                        it,
+                        "carpeta de fondos del tema",
+                    )
+                }
 
             // Enlaza (o copia) el contenido del tema, excepto la carpeta de fondos y
             // el directorio que contiene el archivo de configuración, que se recrean.
@@ -1160,12 +1215,16 @@ class SddmRepositoryImpl(
                 linkOrCopy(backgroundFile, File(backgroundsDir, backgroundFile.name))
             }
 
-            val tempBackground = File(backgroundsDir, background.name)
+            val tempBackground = pathValidator.requireInside(
+                backgroundsDir,
+                File(backgroundsDir, background.name),
+                "fondo temporal",
+            )
             Files.copy(background.toPath(), tempBackground.toPath(), StandardCopyOption.REPLACE_EXISTING)
 
-            if (configuredRelativePath != null) {
-                val sourceConfig = File(sourceThemeDir, configuredRelativePath)
-                val tempConfig = File(tempThemeDir, configuredRelativePath)
+            if (sourceConfig != null) {
+                val relativePath = relativeToTheme(sourceThemeDir, sourceConfig)
+                val tempConfig = File(tempThemeDir, relativePath)
                 tempConfig.parentFile?.mkdirs()
                 tempConfig.writeText(
                     buildConfiguredThemePreview(
@@ -1175,7 +1234,11 @@ class SddmRepositoryImpl(
                     )
                 )
             } else {
-                val sourceThemeConf = File(sourceThemeDir, "theme.conf")
+                val sourceThemeConf = pathValidator.requireInside(
+                    sourceThemeDir,
+                    File(sourceThemeDir, "theme.conf"),
+                    "configuración tradicional del tema",
+                )
                 if (sourceThemeConf.isFile) {
                     File(tempThemeDir, "theme.conf").writeText(
                         buildThemeConfPreview(
@@ -1193,6 +1256,20 @@ class SddmRepositoryImpl(
             e.printStackTrace()
             null
         }
+    }
+
+    private fun relativeToTheme(themeDir: File, file: File): String {
+        val resolvedTheme = pathValidator.requireInside(
+            themeDir,
+            themeDir,
+            "raíz del tema",
+        )
+        val resolvedFile = pathValidator.requireInside(
+            themeDir,
+            file,
+            "archivo de configuración del tema",
+        )
+        return resolvedTheme.toPath().relativize(resolvedFile.toPath()).toString()
     }
 
     /**
@@ -1425,14 +1502,7 @@ class SddmRepositoryImpl(
 
     private fun readConfiguredThemeFile(themeDir: File): File? {
         val configPath = readConfiguredThemePath(themeDir) ?: return null
-
-        val configFile = if (File(configPath).isAbsolute) {
-            File(configPath)
-        } else {
-            File(themeDir, configPath)
-        }
-
-        return configFile.takeIf { it.isFile }
+        return pathValidator.resolveThemeConfig(themeDir, configPath).takeIf { it.isFile }
     }
 
     private fun readIniFile(file: File): Map<String, String> {
@@ -1468,20 +1538,6 @@ class SddmRepositoryImpl(
         }
 
         return values
-    }
-
-    private fun resolveBackgroundFile(themeDir: File, rawValue: String?): File? {
-        val value = rawValue?.trim()?.trim('"', '\'')?.removePrefix("./").orEmpty()
-        if (value.isBlank()) return null
-
-        val candidates = mutableListOf<File>()
-        if (value.startsWith("/")) {
-            candidates.add(File(value))
-        }
-        candidates.add(File(themeDir, value))
-        candidates.add(File(themeDir, "backgrounds/$value"))
-
-        return candidates.firstOrNull { it.isFile && it.canRead() }
     }
 
     private fun restoreThemeBackup(
@@ -1538,17 +1594,11 @@ class SddmRepositoryImpl(
         return RestoreBackupResult.Success(backup)
     }
 
-    private fun validateThemeConfigPath(configFile: File): String? {
-        val resolved = configFile.canonicalFile
-        val allowed = setOf(
-            sddmConfFile.canonicalFile,
-            File(sddmConfDir, "99-aura-theme.conf").canonicalFile,
-        )
-        return if (resolved in allowed) {
-            null
-        } else {
-            "El respaldo apunta a una configuración de SDDM fuera de las rutas permitidas."
-        }
+    private fun validateThemeConfigPath(configFile: File): String? = try {
+        pathValidator.resolveSddmConfig(configFile)
+        null
+    } catch (error: PathValidationException) {
+        error.message
     }
 
     private fun restoreThemeConfigDirectly(
@@ -1637,12 +1687,14 @@ class SddmRepositoryImpl(
         }
     }
 
-    private fun themeConfigTarget(): File =
-        if (sddmConfDir.isDirectory) {
+    private fun themeConfigTarget(): File {
+        val target = if (sddmConfDir.isDirectory) {
             File(sddmConfDir, "99-aura-theme.conf")
         } else {
             sddmConfFile
         }
+        return pathValidator.resolveSddmConfig(target)
+    }
 
     private fun isConfigFileWritable(file: File): Boolean =
         if (file.exists()) {
@@ -1651,27 +1703,21 @@ class SddmRepositoryImpl(
             file.parentFile?.let { Files.isWritable(it.toPath()) } ?: false
         }
 
-    private fun resolveThemeDir(themeName: String): File? {
-        if (themeName.isBlank() ||
-            themeName.contains('/') ||
-            themeName.contains('\\') ||
-            themeName.contains("..")
-        ) {
-            return null
-        }
-
-        val themesRoot = themesDir.canonicalFile
-        val themeDir = File(themesDir, themeName).canonicalFile
-        if (themeDir.parentFile != themesRoot) return null
-        return themeDir.takeIf { it.isDirectory }
-    }
+    private fun resolveThemeDir(themeName: String): File? =
+        pathValidator.resolveThemeDir(themeName)
 
     private fun findThemeConfigFile(themeDir: File): File? {
         val configuredPath = readConfiguredThemePath(themeDir)
         if (configuredPath != null) {
-            File(themeDir, configuredPath).takeIf { it.isFile }?.let { return it }
+            pathValidator.resolveThemeConfig(themeDir, configuredPath)
+                .takeIf { it.isFile }
+                ?.let { return it }
         }
-        return File(themeDir, "theme.conf").takeIf { it.isFile }
+        return pathValidator.requireInside(
+            themeDir,
+            File(themeDir, "theme.conf"),
+            "configuración tradicional del tema",
+        ).takeIf { it.isFile }
     }
 
     private fun readThemeDisplayName(themeDir: File): String {
