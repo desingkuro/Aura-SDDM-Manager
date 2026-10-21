@@ -118,5 +118,25 @@ class SddmBackupTest {
             env.close()
         }
     }
+
+    @Test
+    fun `ignora respaldos que son symlinks fuera de la carpeta`() {
+        val env = SddmTestEnvironment()
+        try {
+            val outside = File(env.root, "outside-backup").apply { mkdirs() }
+            File(outside, "backup.properties").writeText("version=1\nkind=theme\n")
+            Files.createDirectories(env.backupsDir.toPath())
+            Files.createSymbolicLink(
+                File(env.backupsDir, "evil").toPath(),
+                outside.toPath(),
+            )
+
+            assertTrue(env.repository.listBackups().isEmpty())
+            val result = env.repository.restoreBackup("evil")
+            assertTrue(result is RestoreBackupResult.Failure)
+        } finally {
+            env.close()
+        }
+    }
 }
 

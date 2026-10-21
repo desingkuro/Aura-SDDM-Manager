@@ -697,11 +697,17 @@ class SddmRepositoryImpl(
 
         return backupsDir.listFiles()
             ?.asSequence()
-            ?.filter { it.isDirectory }
+            ?.filter { it.isDirectory && isDirectChild(backupsDir, it) }
             ?.mapNotNull { dir -> runCatching { readBackup(dir) }.getOrNull() }
             ?.sortedByDescending { it.createdAt }
             ?.toList()
             ?: emptyList()
+    }
+
+    private fun isDirectChild(parent: File, child: File): Boolean {
+        val resolvedParent = parent.canonicalFile
+        val resolvedChild = child.canonicalFile
+        return resolvedChild.parentFile?.canonicalFile == resolvedParent
     }
 
     private fun readBackup(backupDir: File): SddmBackup? {
@@ -758,7 +764,7 @@ class SddmRepositoryImpl(
         }
 
         val backupDir = File(backupsDir, backupId)
-        if (!backupDir.isDirectory) {
+        if (!backupDir.isDirectory || !isDirectChild(backupsDir, backupDir)) {
             return RestoreBackupResult.Failure("No se encontró el respaldo seleccionado.")
         }
 
