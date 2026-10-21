@@ -1,11 +1,11 @@
 # Estado del proyecto — Aura SDDM Manager
 
-> **Última actualización:** 19 de octubre de 2026
-> **Rama de trabajo:** `dev` · **Último bloque:** pruebas, selector de destino,
-> permisos/errores y Ajustes con diagnóstico + selector de tema.
+> **Última actualización:** 21 de octubre de 2026
+> **Rama de trabajo:** `dev` · **Último bloque:** concurrencia con corrutinas,
+> validación canónica de rutas, transaccionalidad y permisos POSIX.
 > **Sincronización:** `main` y `dev` se actualizan al publicar este bloque.
-> **Build:** `./gradlew build` y `./gradlew :desktopApp:test` → correctos
-> (36 pruebas, 0 fallos).
+> **Build:** `./gradlew clean :desktopApp:build :desktopApp:test` → correcto
+> (50 pruebas, 0 fallos).
 
 Este documento resume el estado real del proyecto, lo que falta, los puntos de
 mejora y un listado priorizado de ideas para seguir creciendo. Es un documento
@@ -24,10 +24,12 @@ selector de tema.
 
 El proyecto es estable a nivel de compilación y de flujo manual: importar →
 seleccionar → previsualizar → aplicar funciona, cada operación deja un respaldo
-restaurable y la configuración se publica de forma atómica. La deuda principal
-ahora es la **transaccionalidad entre configuración y fondo**, la conservación
-de **permisos/propietario**, la **apariencia del tema** y la cobertura del flujo
-`pkexec` con dobles de prueba.
+restaurable, la configuración se publica de forma atómica y el conjunto
+configuración + fondo se revierte si falla. La UI usa corrutinas, `StateFlow` y
+`viewModelScope`; las rutas del tema se validan de forma canónica y los permisos
+POSIX originales se conservan. La deuda principal ahora es extraer los casos de
+uso para adelgazar el repositorio, la **apariencia del tema** y la cobertura del
+flujo `pkexec` con dobles de prueba.
 
 **Semáforo general**
 
@@ -38,7 +40,7 @@ de **permisos/propietario**, la **apariencia del tema** y la cobertura del flujo
 | Aplicar cambios en SDDM | 🟢 Funcional, con destino y respaldo/restauración |
 | Previsualización | 🟢 Funcional |
 | Ajustes | 🟢 Respaldos, diagnóstico y selector de tema; apariencia pendiente |
-| Pruebas automatizadas | 🟢 36 pruebas del repositorio; falta automatizar `pkexec` real |
+| Pruebas automatizadas | 🟢 50 pruebas del repositorio; falta automatizar `pkexec` real |
 | Empaquetado / distribución | 🟡 Configurado, no verificado |
 | Documentación | 🟢 README + `docs/ideas-ajustes.md` + este archivo |
 
@@ -75,7 +77,7 @@ de **permisos/propietario**, la **apariencia del tema** y la cobertura del flujo
 | Pantalla de Ajustes | 🟢 | Diagnóstico, tema y respaldos; apariencia pendiente |
 | Persistencia de preferencias | ❌ | No existe |
 | Respaldo / deshacer cambios | ✅ | Respaldo y restauración; no hay redo |
-| Tests del módulo desktop | 🟢 | 36 pruebas con directorios temporales |
+| Tests del módulo desktop | 🟢 | 50 pruebas con directorios temporales |
 | Internacionalización | ❌ | Textos en español hardcodeados |
 | Empaquetado probado | 🟡 | `nativeDistributions` configurado, sin verificar |
 
@@ -87,7 +89,8 @@ Aura/
 │   └── src/main/kotlin/com/example/aura/
 │       ├── data/
 │       │   ├── local/           # StorageManager (carpeta de medios)
-│       │   └── repository/      # MediaRepositoryImple, SddmRepositoryImpl
+│       │   ├── repository/      # MediaRepositoryImple, SddmRepositoryImpl
+│       │   └── security/        # PathValidator (canonicalPath, anti-traversal)
 │       ├── domain/
 │       │   ├── models/          # Resultados, BackgroundDestination, SddmTheme,
 │       │   │                    # SddmDiagnostics, SddmBackup…
@@ -96,8 +99,8 @@ Aura/
 │       │   ├── ui/components/   # Sidebar, MainScreen, Footer, Destino, diálogos…
 │       │   ├── ui/screens/      # MediaScreen, SettingsScreen
 │       │   ├── ui/theme/        # AuraColors
-│       │   ├── utils/           # FilePicker, conversión de miniaturas
-│       │   └── viewmodels/      # MediaViewModel, SettingsViewModel, Navigations
+│       │   ├── utils/           # FilePicker suspendido, conversión de miniaturas
+│       │   └── viewmodels/      # MediaViewModel, SettingsViewModel, UiState, Navigation
 │       └── main.kt              # Ventana principal
 ├── shared/                      # Plantilla KMP heredada (sin uso)
 ├── docs/ideas-ajustes.md        # Ideas específicas para Ajustes
@@ -105,21 +108,25 @@ Aura/
 ```
 
 **Capas:** `presentation` → `domain` (contratos/modelos) ← `data` (implementaciones).
-Es una Clean Architecture básica; todavía no hay capa de casos de uso ni
-inyección de dependencias formal.
+Es una Clean Architecture básica. La UI ya usa `StateFlow`/`viewModelScope`, pero
+todavía no hay una capa de casos de uso ni inyección de dependencias formal: ese
+es el siguiente refactor arquitectónico.
 
 **Flujo de aplicación de fondo**
 
 1. `FooterScreen` → diálogo de confirmación con `DestinationSelector`.
 2. `MediaViewModel.applySelectedBackground()` captura el destino y llama a
-   `SddmRepositoryImpl.applyBackground(file, destination)`.
+   `SddmRepositoryImpl.applyBackground(file, destination)` en `Dispatchers.IO`.
 3. Detecta tema y archivo de configuración (`metadata.desktop` → `ConfigFile`, o `theme.conf`).
-4. Comprueba permisos; si el tema está protegido y falta `pkexec`, aborta antes
+4. Valida todas las rutas con `PathValidator` y `canonicalPath`; si el
+   `ConfigFile` o el fondo salen del tema, aborta con un error de seguridad.
+5. Comprueba permisos; si el tema está protegido y falta `pkexec`, aborta antes
    de crear un respaldo.
-5. Crea un respaldo en `~/.local/share/Aura/backups/<fecha>-<tema>/`.
-6. Reescribe solo las pantallas elegidas (`LoginScreen`, `LockScreen` o ambas).
-7. Copia el archivo a `backgrounds/` y aplica con `pkexec` si hace falta.
-8. Guarda la ruta en `~/.local/share/Aura/current_bg.txt` y devuelve un resultado tipado.
+6. Crea un respaldo en `~/.local/share/Aura/backups/<fecha>-<tema>/`.
+7. Copia el archivo a `backgrounds/` conservando uid, gid y permisos del destino.
+8. Reescribe solo las pantallas elegidas (`LoginScreen`, `LockScreen` o ambas)
+   con temporal + `rename`; si falla, restaura el fondo anterior.
+9. Guarda la ruta en `~/.local/share/Aura/current_bg.txt` y devuelve un resultado tipado.
 
 **Flujo de cambio de tema**
 
@@ -127,9 +134,10 @@ inyección de dependencias formal.
 2. Al confirmar, `SddmRepositoryImpl.changeTheme()` crea un respaldo del tema y
    de `current_bg.txt`.
 3. Escribe `[Theme] Current` en `/etc/sddm.conf.d/99-aura-theme.conf` (o en
-   `/etc/sddm.conf` si no existe el directorio) con temporal + `rename`.
+   `/etc/sddm.conf` si no existe el directorio) con temporal + `rename`,
+   conservando propietario/grupo/permisos.
 4. Verifica que el tema efectivo cambió; si otro archivo tiene prioridad,
-   devuelve un error explicativo.
+   revierte la configuración anterior y devuelve un error explicativo.
 5. Limpia el registro de fondo del tema anterior. El respaldo permite volver al
    tema previo desde Ajustes.
 
@@ -155,13 +163,19 @@ inyección de dependencias formal.
   vacío; el código real usa `~/.local/share/Aura/current_bg.txt`.
 - `MediaViewModel.getCurrentThemeSddm()` y `getGreeterPathSddm()` no se usan.
 - `MediaRepositoryImple` (typo).
-- Los hilos se manejan con `thread { }` en lugar de corrutinas/`Dispatchers.IO`.
-- La configuración se publica con temporal + `rename` atómico. El fondo se copia
-  antes y la configuración se activa al final, pero el conjunto config+fondo
-  todavía no es una operación transaccional.
+- La UI usa `viewModelScope`, `Dispatchers.IO` y `StateFlow`; ya no quedan
+  `thread { }` para concurrencia.
+- La configuración y el fondo se aplican de forma transaccional: si falla la
+  escritura de la configuración, se revierte el fondo. Se conservan uid, gid y
+  permisos POSIX del archivo original.
+- `PathValidator` resuelve symlinks y `..` con `canonicalPath`; bloquea
+  `ConfigFile`, fondos, respaldos y configuración de SDDM fuera de las rutas
+  permitidas.
+- El repositorio sigue concentrando demasiada lógica (config, pkexec, ffmpeg,
+  backups); falta extraer casos de uso y separar el acceso a datos.
 - El cambio de tema usa el nombre fijo `99-aura-theme.conf`; si otra distro
-  tiene un drop-in posterior, `changeTheme` devuelve error en lugar de asumir
-  éxito, pero convendría elegir dinámicamente el orden.
+  tiene un drop-in posterior, `changeTheme` revierte y devuelve error en lugar
+  de asumir éxito, pero convendría elegir dinámicamente el orden.
 - Los métodos de diagnóstico y detección de procesos usan `ProcessHandle`; en
   sesiones muy restringidas puede no detectar el agente Polkit.
 
@@ -175,7 +189,7 @@ inyección de dependencias formal.
       Implementado con manifiesto, listado y restauración desde Ajustes.
 - [x] **Cubrir `SddmRepositoryImpl` con pruebas**: detección de tema/fondo,
       reescritura de `ConfigFile` y `theme.conf`, destinos, nombres con espacios,
-      videos, errores, respaldos y cambio de tema. 36 pruebas con directorios
+      videos, errores, respaldos y cambio de tema. 50 pruebas con directorios
       temporales.
 - [x] **Mejorar la gestión de permisos y errores de `Aplicar`**:
       - distingue cancelación de autenticación (126), autorización denegada (127)
@@ -193,8 +207,14 @@ inyección de dependencias formal.
       symlinks. El fondo se copia antes y la configuración se activa al final.
 - [x] **Selector de tema con respaldo restaurable**: `/etc/sddm.conf.d/99-aura-theme.conf`
       o `/etc/sddm.conf`, con verificación del tema efectivo.
-- [ ] **Hacer transaccional la operación config+fondo** y conservar
-      permisos/propietario originales.
+- [x] **Hacer transaccional la operación config+fondo** y conservar
+      permisos/propietario originales. Implementado con rollback local del
+      fondo y scripts `pkexec` con trampa de error.
+- [x] **Validación canónica de rutas**: `PathValidator` bloquea *path traversal*
+      en `ConfigFile`, fondos, respaldos y configuración de SDDM.
+- [ ] **Extraer casos de uso** (`ApplySddmBackground`, `CreateBackup`,
+      `RestoreBackup`, `ValidatePermissions`) y dejar el repositorio como
+      fachada de acceso a datos.
 - [ ] **Limpiar código muerto y restos de plantilla**: `shared/`, `current_bg.txt`
       versionado, métodos sin uso.
 
@@ -233,17 +253,18 @@ inyección de dependencias formal.
 
 1. **Backup automático antes de aplicar** (config y fondo anterior) y botón de
    restauración. ✅ Implementado.
-2. **Escritura atómica de configuración**: temporal + `rename`, implementada en
-   escritura directa y con `pkexec`. Falta hacer transaccional la operación
-   completa (configuración + archivo de fondo) y conservar permisos/propietario.
+2. **Escritura atómica y transaccional**: temporal + `rename` en escritura
+   directa y con `pkexec`. Si falla la configuración después de copiar el fondo,
+   se restaura el fondo anterior. ✅ Implementado.
 3. **Modelo de privilegios más estricto**: hoy se ejecuta con `pkexec` un script
    temporal propiedad del usuario. Funciona, pero conviene evaluar un *helper*
    Polkit dedicado o `pkexec` con argumentos acotados.
-4. **Validación de rutas y nombres**: el respaldo de tema solo permite
-   `/etc/sddm.conf` o `99-aura-theme.conf`; el respaldo de fondo valida que las
-   rutas estén dentro del tema. Evitar colisiones con archivos reservados
-   (`default.jpg`, etc.) sigue pendiente.
-5. **Restaurar permisos/propietario** originales del archivo de configuración.
+4. **Validación de rutas y nombres**: `PathValidator` usa `canonicalPath` y
+   bloquea cualquier ruta fuera del tema o de las configuraciones permitidas de
+   SDDM. Evitar colisiones con archivos reservados (`default.jpg`, etc.) sigue
+   pendiente.
+5. **Restaurar permisos/propietario**: se conservan uid, gid y permisos POSIX del
+   destino; los archivos nuevos se crean con `644`. ✅ Implementado.
 6. **Registrar qué se cambió**: los respaldos de fondo y de tema ya guardan
    fecha, tema, rutas y banderas en `backup.properties`. Falta un historial
    legible de operaciones.
@@ -258,8 +279,8 @@ inyección de dependencias formal.
 4. **Corregir nombres**: `MediaRepositoryImpl`.
 5. **Eliminar el módulo `shared`** si no se va a reutilizar, o mover allí los
    modelos y utilidades realmente compartidos.
-6. **Usar corrutinas** (`viewModelScope`/`Dispatchers.IO`) en vez de `thread`.
-7. **Separar estado de UI del ViewModel** con un `UiState` inmutable por pantalla.
+6. ~~Usar corrutinas (`viewModelScope`/`Dispatchers.IO`) en vez de `thread`.~~ ✅ Hecho.
+7. ~~Separar estado de UI del ViewModel con un `UiState` inmutable por pantalla.~~ ✅ Hecho con `MediaUiState` y `SettingsUiState` + `StateFlow`.
 
 ### 4.3 Rendimiento
 
@@ -398,11 +419,13 @@ y dotfiles.
 ### Corto plazo — v0.2 (estabilizar)
 
 1. [x] Backups + restauración.
-2. [x] Tests de `SddmRepositoryImpl` (36 pruebas).
+2. [x] Tests de `SddmRepositoryImpl` (50 pruebas).
 3. [x] Gestión de permisos/errores de `Aplicar` (cancelación, `pkexec` ausente).
 4. [x] Selector de destino login/bloqueo/ambos.
-5. [ ] Limpieza de código muerto y del módulo `shared`.
-6. [x] Arreglar el diálogo de eliminar sin selección.
+5. [x] Concurrencia con `viewModelScope`/`StateFlow` y sin `thread { }`.
+6. [x] Validación canónica de rutas y transaccionalidad config+fondo.
+7. [ ] Extraer casos de uso y limpiar código muerto/módulo `shared`.
+8. [x] Arreglar el diálogo de eliminar sin selección.
 
 ### Medio plazo — v0.3 (personalización)
 
@@ -434,7 +457,7 @@ y dotfiles.
 | Videos con códecs no soportados | Medio | Validación/transcodificación |
 | GIF como fondo | Alto (puede crashear SDDM) | Bloquear o convertir a video/imagen |
 | Config a medio escribir | Bajo | Temporal + `rename` atómico (implementado) |
-| Propiedad `root` de los archivos tras `pkexec` | Bajo | Restaurar permisos esperados |
+| Propiedad `root` de los archivos tras `pkexec` | Bajo | `chown`/`chmod` con uid, gid y modo originales |
 | `current_bg.txt` desactualizado | Bajo | Validar existencia y caer al tema |
 | Miniaturas de video regeneradas | Bajo | Caché en disco |
 | Rutas hardcodeadas (`/usr/share/sddm`, `/etc/sddm.conf`) | Medio | Preferencias de rutas |
@@ -443,12 +466,13 @@ y dotfiles.
 
 - Ajustes cubre respaldos, diagnóstico y cambio de tema; faltan las opciones de
   apariencia y las rutas configurables.
-- Hay respaldo, restauración y escritura atómica de configuración; faltan redo y
-  transaccionalidad entre configuración y fondo.
-- No se conservan permisos/propietario originales al reemplazar la configuración.
+- Hay respaldo, restauración, escritura atómica y rollback de configuración+fondo;
+  falta redo y un diario persistente para caídas del proceso.
+- La validación de rutas y la conservación de permisos ya están implementadas;
+  falta probar el flujo `pkexec` real de forma automatizada.
 - No detecta fondos definidos únicamente por color.
 - No reinicia SDDM; el usuario debe cerrar sesión o reiniciar el servicio.
-- La cobertura es de 36 pruebas del repositorio; el flujo real con `pkexec`
+- La cobertura es de 50 pruebas del repositorio; el flujo real con `pkexec`
   interactivo aún no se automatiza.
 
 ---

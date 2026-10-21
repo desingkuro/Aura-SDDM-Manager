@@ -125,7 +125,8 @@ Contiene contratos y modelos independientes de la UI.
 Contiene las implementaciones de repositorio y utilidades de almacenamiento local.
 
 - `MediaRepositoryImple`: filtra imágenes/videos y copia archivos al almacenamiento local.
-- `SddmRepositoryImpl`: detecta el tema actual, resuelve el fondo aplicado, lanza `sddm-greeter`, crea respaldos, restaura configuraciones, lista temas, diagnostica dependencias y cambia el tema activo.
+- `SddmRepositoryImpl`: acceso y orquestación de SDDM: detecta el tema actual, resuelve el fondo aplicado, lanza `sddm-greeter`, crea respaldos, restaura configuraciones, lista temas, diagnostica dependencias y cambia el tema activo.
+- `PathValidator`: valida rutas canónicas y bloquea *path traversal* en `metadata.desktop`, fondos, respaldos y configuración de SDDM.
 - `StorageManager`: crea/usa el directorio local de medios.
 
 ## Consideraciones actuales
@@ -138,7 +139,9 @@ Contiene las implementaciones de repositorio y utilidades de almacenamiento loca
 - Para temas tradicionales, el fondo se obtiene desde `theme.conf` (`[General] background`).
 - Para SilentSDDM, el fondo se obtiene desde `metadata.desktop` → `ConfigFile=` → `configs/*.conf`, leyendo `[LoginScreen] background` o `[LockScreen] background` y resolviendo rutas relativas contra `backgrounds/`.
 - La acción de **Aplicar** crea primero un respaldo de la configuración y del fondo anterior, y después copia el fondo seleccionado (imagen o video) a la carpeta `backgrounds/` del tema SDDM actual y reescribe su configuración (`ConfigFile` de `metadata.desktop` o `theme.conf`) para las pantallas elegidas: login, bloqueo o ambas. Los temas tradicionales con `theme.conf` solo tienen un fondo general, así que el selector se limita a "Ambos" en esos casos. El cambio se registra en `~/.local/share/Aura/current_bg.txt`.
-- La configuración se escribe primero en un temporal del mismo directorio y se publica con `rename` atómico. Así SDDM nunca lee un archivo a medio escribir; se respetan los symlinks y se fijan permisos `644`.
+- La configuración se escribe primero en un temporal del mismo directorio y se publica con `rename` atómico. Así SDDM nunca lee un archivo a medio escribir; se respetan los symlinks y se conservan el propietario, el grupo y los permisos POSIX originales. Los archivos nuevos se crean con modo `644`.
+- El flujo de **Aplicar** es transaccional: si la configuración falla después de copiar el fondo, Aura restaura el fondo anterior (o elimina el nuevo si no existía) antes de devolver el error. La misma lógica se aplica en el script de `pkexec`.
+- Todas las rutas que provienen del tema se resuelven con `PathValidator` y `canonicalPath`; cualquier intento de salir de `/usr/share/sddm/themes/...` o de `/etc` se rechaza con un error de seguridad.
 - El **cambio de tema** escribe una configuración dedicada en `/etc/sddm.conf.d/99-aura-theme.conf` (o en `/etc/sddm.conf` si no existe `sddm.conf.d`), crea un respaldo restaurable y limpia el registro de fondo del tema anterior. Si otro archivo de configuración tiene prioridad, Aura avisa en lugar de dar el cambio por bueno.
 - Los respaldos se guardan en `~/.local/share/Aura/backups/<fecha>-<tema>/` y se pueden restaurar desde **Ajustes Avanzados**. La restauración pide confirmación y usa `pkexec` solo si el tema o la configuración pertenecen al sistema.
 - El **diagnóstico** comprueba el tema actual, las rutas, la configuración, la carpeta de fondos, `sddm-greeter`, `pkexec`, el agente Polkit, `ffmpeg` y la carpeta de respaldos.
@@ -167,7 +170,7 @@ El manifiesto se escribe al final y se publica con un movimiento atómico: si un
 
 ## Próximos pasos
 
-1. Restauración de permisos/propietario originales y operación transaccional entre configuración y fondo.
+1. Extraer casos de uso (`ApplySddmBackground`, `CreateBackup`, `RestoreBackup` y `ValidatePermissions`) para que `SddmRepositoryImpl` quede como fachada de acceso a datos.
 2. Automatizar el flujo con `pkexec` mediante inyección o un helper Polkit dedicado.
 3. Detectar fondos definidos únicamente por color.
 4. Caché de miniaturas, gestión de almacenamiento y limpieza de respaldos.

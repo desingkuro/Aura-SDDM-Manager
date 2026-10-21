@@ -92,7 +92,7 @@ pruebas para reescritura selectiva.
   con `rename` atómico, tanto directamente como mediante `pkexec`.
 
 **Estado:** implementado en `SddmRepositoryImpl`, `SettingsViewModel` y
-`SettingsScreen`, con 36 pruebas de respaldo, escritura atómica, destinos,
+`SettingsScreen`, con 50 pruebas de respaldo, escritura atómica, destinos,
 detección y cambio de tema en directorios temporales.
 
 **Esfuerzo:** Medio · **Depende de:** nada.
