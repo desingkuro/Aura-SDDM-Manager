@@ -21,7 +21,9 @@ import androidx.compose.material.Button
 import androidx.compose.material.ButtonDefaults
 import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -53,9 +55,10 @@ private val diagnosticsTimeFormatter = DateTimeFormatter.ofPattern("HH:mm:ss")
 @Composable
 fun SettingsScreen(modifier: Modifier = Modifier) {
     val viewModel = remember { SettingsViewModel() }
+    val state by viewModel.uiState.collectAsState()
 
-    LaunchedEffect(Unit) {
-        viewModel.loadSettings()
+    DisposableEffect(viewModel) {
+        onDispose { viewModel.dispose() }
     }
 
     Column(
@@ -97,10 +100,10 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
         }
     }
 
-    val backupToRestore = viewModel.selectedBackup
+    val backupToRestore = state.selectedBackup
 
     CustomAlertDialog(
-        showDialog = viewModel.showRestoreDialog && backupToRestore != null,
+        showDialog = state.showRestoreDialog && backupToRestore != null,
         title = "Restaurar respaldo",
         message = backupToRestore?.let(::buildRestoreDialogMessage).orEmpty(),
         confirmText = "Restaurar",
@@ -109,21 +112,21 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     )
 
     CustomAlertDialog(
-        showDialog = viewModel.restoreMessage != null,
-        title = if (viewModel.restoreSucceeded) "Respaldo restaurado" else "No se pudo restaurar",
-        message = viewModel.restoreMessage.orEmpty(),
+        showDialog = state.restoreMessage != null,
+        title = if (state.restoreSucceeded) "Respaldo restaurado" else "No se pudo restaurar",
+        message = state.restoreMessage.orEmpty(),
         onDismiss = { viewModel.clearRestoreMessage() }
     )
 
-    val themeToChange = viewModel.selectedTheme
+    val themeToChange = state.selectedTheme
 
     CustomAlertDialog(
-        showDialog = viewModel.showThemeDialog && themeToChange != null,
+        showDialog = state.showThemeDialog && themeToChange != null,
         title = "Cambiar tema de SDDM",
         message = themeToChange?.let { theme ->
             buildString {
                 append("Se cambiará el tema actual \"")
-                append(viewModel.currentTheme.ifBlank { "desconocido" })
+                append(state.currentTheme.ifBlank { "desconocido" })
                 append("\" por \"${theme.displayName}\".")
                 append("\n\nSe creará un respaldo automático de la configuración de SDDM ")
                 append("antes del cambio. Se solicitarán permisos de administrador si es necesario.")
@@ -136,15 +139,17 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     )
 
     CustomAlertDialog(
-        showDialog = viewModel.themeMessage != null,
-        title = if (viewModel.themeChangeSucceeded) "Tema cambiado" else "No se pudo cambiar el tema",
-        message = viewModel.themeMessage.orEmpty(),
+        showDialog = state.themeMessage != null,
+        title = if (state.themeChangeSucceeded) "Tema cambiado" else "No se pudo cambiar el tema",
+        message = state.themeMessage.orEmpty(),
         onDismiss = { viewModel.clearThemeMessage() }
     )
 }
 
 @Composable
 private fun DiagnosticsCard(viewModel: SettingsViewModel) {
+    val state by viewModel.uiState.collectAsState()
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -175,12 +180,12 @@ private fun DiagnosticsCard(viewModel: SettingsViewModel) {
 
             Button(
                 onClick = { viewModel.refresh() },
-                enabled = !viewModel.isRefreshing && !viewModel.isChangingTheme &&
-                    !viewModel.isRestoring,
+                enabled = !state.isRefreshing && !state.isChangingTheme &&
+                    !state.isRestoring,
                 colors = secondaryButtonColors()
             ) {
                 Text(
-                    text = if (viewModel.isRefreshing) "Comprobando..." else "Actualizar",
+                    text = if (state.isRefreshing) "Comprobando..." else "Actualizar",
                     fontSize = 12.sp
                 )
             }
@@ -188,8 +193,14 @@ private fun DiagnosticsCard(viewModel: SettingsViewModel) {
 
         Spacer(modifier = Modifier.height(14.dp))
 
-        val diagnostics = viewModel.diagnostics
-        if (diagnostics == null) {
+        val diagnostics = state.diagnostics
+        if (state.refreshError != null) {
+            Text(
+                text = state.refreshError.orEmpty(),
+                color = AuraColors.Danger,
+                fontSize = 12.sp
+            )
+        } else if (diagnostics == null) {
             Text(
                 text = "Comprobando el entorno...",
                 color = AuraColors.TextMuted,
@@ -254,6 +265,8 @@ private fun DiagnosticRow(item: SddmDiagnostic) {
 
 @Composable
 private fun ThemesCard(viewModel: SettingsViewModel) {
+    val state by viewModel.uiState.collectAsState()
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -268,16 +281,16 @@ private fun ThemesCard(viewModel: SettingsViewModel) {
         )
         Spacer(modifier = Modifier.height(4.dp))
         Text(
-            text = "Tema actual: ${viewModel.currentTheme.ifBlank { "desconocido" }}",
+            text = "Tema actual: ${state.currentTheme.ifBlank { "desconocido" }}",
             color = AuraColors.TextSecondary,
             fontSize = 13.sp
         )
 
         Spacer(modifier = Modifier.height(14.dp))
 
-        if (viewModel.themes.isEmpty()) {
+        if (state.themes.isEmpty()) {
             Text(
-                text = if (viewModel.isRefreshing) {
+                text = if (state.isRefreshing) {
                     "Cargando temas instalados..."
                 } else {
                     "No se encontraron temas instalados en /usr/share/sddm/themes."
@@ -287,10 +300,10 @@ private fun ThemesCard(viewModel: SettingsViewModel) {
             )
         } else {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                viewModel.themes.forEach { theme ->
+                state.themes.forEach { theme ->
                     ThemeRow(
                         theme = theme,
-                        enabled = !viewModel.isChangingTheme && !viewModel.isRestoring,
+                        enabled = !state.isChangingTheme && !state.isRestoring,
                         onChange = { viewModel.requestThemeChange(theme) }
                     )
                 }
@@ -376,6 +389,8 @@ private fun BackupsCard(
     viewModel: SettingsViewModel,
     modifier: Modifier = Modifier,
 ) {
+    val state by viewModel.uiState.collectAsState()
+
     Column(
         modifier = modifier
             .background(AuraColors.Surface, RoundedCornerShape(16.dp))
@@ -405,14 +420,14 @@ private fun BackupsCard(
 
             Button(
                 onClick = { viewModel.refresh() },
-                enabled = !viewModel.isRestoring && !viewModel.isRefreshing,
+                enabled = !state.isRestoring && !state.isRefreshing,
                 colors = secondaryButtonColors()
             ) {
                 Text("Actualizar", fontSize = 13.sp)
             }
         }
 
-        if (viewModel.isRestoring) {
+        if (state.isRestoring) {
             Spacer(modifier = Modifier.height(8.dp))
             Text(
                 text = "Restaurando respaldo...",
@@ -429,7 +444,7 @@ private fun BackupsCard(
                 .weight(1f)
                 .fillMaxWidth()
         ) {
-            if (viewModel.backups.isEmpty()) {
+            if (state.backups.isEmpty()) {
                 Column(
                     modifier = Modifier.fillMaxSize(),
                     verticalArrangement = Arrangement.Center,
@@ -456,10 +471,10 @@ private fun BackupsCard(
                         .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    viewModel.backups.forEach { backup ->
+                    state.backups.forEach { backup ->
                         BackupRow(
                             backup = backup,
-                            enabled = !viewModel.isRestoring,
+                            enabled = !state.isRestoring,
                             onRestore = { viewModel.requestRestore(backup) }
                         )
                     }

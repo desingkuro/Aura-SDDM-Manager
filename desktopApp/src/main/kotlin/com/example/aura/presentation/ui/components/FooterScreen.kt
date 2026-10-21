@@ -23,13 +23,18 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.aura.presentation.ui.theme.AuraColors
-import com.example.aura.presentation.viewmodels.MediaViewModel
+import com.example.aura.presentation.viewmodels.MediaUiState
 
 @Composable
 fun FooterScreen(
     modifier: Modifier = Modifier,
-    viewModel: MediaViewModel,
+    state: MediaUiState,
+    onPreview: () -> Unit,
+    onDelete: () -> Unit,
+    onApply: () -> Unit,
 ) {
+    val canAct = state.selectedFile != null && !state.isApplying && !state.isPreviewing
+
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -39,85 +44,69 @@ fun FooterScreen(
         verticalAlignment = Alignment.CenterVertically
     ) {
 
-        //Previsualizar
+        // Previsualizar
         Box(
             modifier = Modifier
                 .width(132.dp)
                 .height(42.dp)
                 .clip(CircleShape)
                 .background(
-                    if (viewModel.selectedFile != null) AuraColors.PrimaryMuted else AuraColors.SurfaceElevated
+                    if (canAct) AuraColors.PrimaryMuted else AuraColors.SurfaceElevated
                 )
-                .pointerHoverIcon(
-                    if (viewModel.selectedFile != null) PointerIcon.Hand else PointerIcon.Default
-                )
-                .clickable(enabled = viewModel.selectedFile != null) {
-                    viewModel.launchSddmPreview()
-                },
+                .pointerHoverIcon(if (canAct) PointerIcon.Hand else PointerIcon.Default)
+                .clickable(enabled = canAct, onClick = onPreview),
             contentAlignment = Alignment.Center
         ) {
             Text(
-                text = "Previsualizar",
+                text = if (state.isPreviewing) "Previsualizando..." else "Previsualizar",
                 fontSize = 15.sp,
-                color = if (viewModel.selectedFile != null) AuraColors.TextPrimary else AuraColors.TextSecondary,
+                color = if (canAct) AuraColors.TextPrimary else AuraColors.TextSecondary,
                 fontWeight = FontWeight.Bold,
             )
         }
 
         Spacer(modifier = Modifier.width(20.dp))
 
-        //Eliminar
+        // Eliminar
         Box(
             modifier = Modifier
                 .width(132.dp)
                 .height(42.dp)
                 .clip(CircleShape)
                 .background(
-                    if (viewModel.selectedFile != null) AuraColors.Danger else AuraColors.SurfaceElevated
+                    if (canAct) AuraColors.Danger else AuraColors.SurfaceElevated
                 )
-                .pointerHoverIcon(
-                    if (viewModel.selectedFile != null) PointerIcon.Hand else PointerIcon.Default
-                )
-                .clickable(enabled = viewModel.selectedFile != null) {
-                    viewModel.openDeleteDialog()
-                },
+                .pointerHoverIcon(if (canAct) PointerIcon.Hand else PointerIcon.Default)
+                .clickable(enabled = canAct, onClick = onDelete),
             contentAlignment = Alignment.Center
         ) {
             Text(
                 text = "Eliminar",
                 fontSize = 15.sp,
-                color = if (viewModel.selectedFile != null) AuraColors.TextPrimary else AuraColors.TextSecondary,
+                color = if (canAct) AuraColors.TextPrimary else AuraColors.TextSecondary,
                 fontWeight = FontWeight.Bold,
             )
         }
 
         Spacer(modifier = Modifier.width(20.dp))
 
-        //Aplicar
+        // Aplicar
         Box(
             modifier = Modifier
                 .width(132.dp)
                 .height(42.dp)
                 .clip(CircleShape)
                 .background(
-                    if (viewModel.selectedFile != null && !viewModel.isApplying) AuraColors.Primary else AuraColors.SurfaceElevated
+                    if (canAct) AuraColors.Primary else AuraColors.SurfaceElevated
                 )
-                .pointerHoverIcon(
-                    if (viewModel.selectedFile != null && !viewModel.isApplying) {
-                        PointerIcon.Hand
-                    } else {
-                        PointerIcon.Default
-                    }
-                )
-                .clickable(enabled = viewModel.selectedFile != null && !viewModel.isApplying) {
-                    viewModel.openApplyDialog()
-                },
+                .pointerHoverIcon(if (canAct) PointerIcon.Hand else PointerIcon.Default)
+                .clickable(enabled = canAct, onClick = onApply),
             contentAlignment = Alignment.Center
         ) {
             Text(
-                text = if (viewModel.isApplying) "Aplicando..." else "Aplicar",
+                text = if (state.isApplying) "Aplicando..." else "Aplicar",
                 fontSize = 15.sp,
-                color = if (viewModel.selectedFile != null && !viewModel.isApplying) AuraColors.Background else AuraColors.TextSecondary,
+                color = if (canAct) AuraColors.Background else AuraColors.TextSecondary,
                 fontWeight = FontWeight.Bold,
             )
         }

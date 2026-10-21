@@ -23,7 +23,11 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Properties
 import java.util.UUID
-import kotlin.concurrent.thread
+import kotlin.coroutines.resume
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 
 class SddmRepositoryImpl(
     private val appliedBackgroundFile: File = File(System.getProperty("user.home"), ".local/share/Aura/current_bg.txt"),
@@ -292,59 +296,59 @@ class SddmRepositoryImpl(
         return File(themeDir, configuredPath).isFile
     }
 
-    override fun launchPreview(
+    override suspend fun launchPreview(
         background: File?,
         destination: BackgroundDestination,
-    ) {
+    ): String? {
         if (background == null || !background.isFile) {
-            println("No hay un fondo seleccionado para previsualizar.")
-            return
+            return "No hay un fondo seleccionado para previsualizar."
         }
 
-        thread(isDaemon = true) {
+        return withContext(Dispatchers.IO) {
             var tempThemeDir: File? = null
-            var shutdownHook: Thread? = null
             try {
                 val greeterPath = getGreeterPath()
                 if (greeterPath.isBlank()) {
-                    println("Error: No se encontró sddm-greeter en el sistema.")
-                    return@thread
+                    return@withContext "No se encontró sddm-greeter en el sistema. " +
+                        "Instálalo para usar la previsualización."
                 }
 
                 val themeName = getCurrentTheme()
                 val sourceThemeDir = File(themesDir, themeName)
                 if (!sourceThemeDir.isDirectory) {
-                    println("Error: No se encontró el tema actual '$themeName' en $themesDir.")
-                    return@thread
+                    return@withContext "No se encontró el tema actual \"$themeName\" " +
+                        "en ${themesDir.absolutePath}."
                 }
 
                 tempThemeDir = createTemporaryTheme(sourceThemeDir, background, destination)
-                if (tempThemeDir == null) {
-                    println("Error: No se pudo preparar el tema temporal de previsualización.")
-                    return@thread
+                    ?: return@withContext "No se pudo preparar el tema temporal de previsualización."
+
+                println(
+                    "Abriendo previsualización con '${background.name}' usando el tema " +
+                        "temporal ${tempThemeDir.absolutePath}"
+                )
+
+                val process = ProcessBuilder(
+                    greeterPath,
+                    "--test-mode",
+                    "--theme",
+                    tempThemeDir.absolutePath,
+                ).inheritIO().start()
+
+                suspendCancellableCoroutine<Unit> { continuation ->
+                    continuation.invokeOnCancellation { process.destroy() }
+                    process.onExit().whenComplete { _, _ ->
+                        if (continuation.isActive) continuation.resume(Unit)
+                    }
                 }
-
-                val previewDir = tempThemeDir
-                shutdownHook = Thread { deleteRecursively(previewDir) }
-                Runtime.getRuntime().addShutdownHook(shutdownHook)
-
-                println("Abriendo previsualización con '${background.name}' usando el tema temporal ${tempThemeDir.absolutePath}")
-
-                ProcessBuilder(greeterPath, "--test-mode", "--theme", tempThemeDir.absolutePath)
-                    .inheritIO()
-                    .start()
-                    .waitFor()
+                null
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 println("Error al intentar abrir el preview de SDDM: ${e.message}")
                 e.printStackTrace()
+                "No se pudo abrir la previsualización: ${e.message ?: "error desconocido"}"
             } finally {
-                shutdownHook?.let { hook ->
-                    try {
-                        Runtime.getRuntime().removeShutdownHook(hook)
-                    } catch (_: IllegalStateException) {
-                        // El JVM ya está cerrando: el hook se encargará del borrado.
-                    }
-                }
                 tempThemeDir?.let { dir ->
                     deleteRecursively(dir)
                     println("Tema temporal de previsualización eliminado: ${dir.absolutePath}")

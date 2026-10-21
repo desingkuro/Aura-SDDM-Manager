@@ -26,10 +26,10 @@ interface SddmRepository {
      * [background] seleccionado. El tema temporal se elimina al cerrar la ventana.
      * [destination] permite previsualizar solo una pantalla o ambas.
      */
-    fun launchPreview(
+    suspend fun launchPreview(
         background: File?,
         destination: BackgroundDestination = BackgroundDestination.BOTH,
-    )
+    ): String?
 
     /**
      * Aplica [background] (imagen o video) al tema SDDM actual: crea un respaldo

@@ -6,7 +6,9 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -24,10 +26,10 @@ fun MediaScreen(
     modifier: Modifier = Modifier,
 ) {
     val viewModel = remember { MediaViewModel() }
+    val state by viewModel.uiState.collectAsState()
 
-    LaunchedEffect(Unit) {
-        viewModel.loadMedia()
-        viewModel.loadFileApplied()
+    DisposableEffect(viewModel) {
+        onDispose { viewModel.dispose() }
     }
 
     Column(
@@ -47,13 +49,18 @@ fun MediaScreen(
         // MAIN CONTENT
         MainScreen(
             modifier = Modifier.weight(1f),
-            listFiles = viewModel.listImages + viewModel.listVideo,
-            viewModel = viewModel
+            state = state,
+            viewModel = viewModel,
         )
 
         Spacer(modifier = Modifier.height(16.dp))
 
         // FOOTER
-        FooterScreen(viewModel = viewModel)
+        FooterScreen(
+            state = state,
+            onPreview = viewModel::launchSddmPreview,
+            onDelete = viewModel::openDeleteDialog,
+            onApply = viewModel::openApplyDialog,
+        )
     }
 }

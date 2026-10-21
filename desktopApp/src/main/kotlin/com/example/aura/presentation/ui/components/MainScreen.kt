@@ -11,6 +11,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -29,22 +30,25 @@ import aura.desktopapp.generated.resources.images_regular_full
 import com.example.aura.presentation.ui.theme.AuraColors
 import com.example.aura.presentation.utils.openFilePicker
 import com.example.aura.presentation.viewmodels.MediaType
+import com.example.aura.presentation.viewmodels.MediaUiState
 import com.example.aura.presentation.viewmodels.MediaViewModel
+import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.DrawableResource
 import org.jetbrains.compose.resources.painterResource
-import java.io.File
 
 @Composable
 fun MainScreen(
     modifier: Modifier = Modifier,
-    listFiles: List<File>,
+    state: MediaUiState,
     viewModel: MediaViewModel
 ) {
     val scrollState = rememberScrollState()
+    val importScope = rememberCoroutineScope()
     val emptyIcon = Res.drawable.images_regular_full
-    val selectedFile = viewModel.selectedFile
-    val selectedType = viewModel.selectedTypeFile ?: MediaType.IMAGE.cardType
-    val mediaFileApplied = viewModel.fileApplied
+    val selectedFile = state.selectedFile
+    val selectedType = state.selectedType ?: MediaType.IMAGE.cardType
+    val mediaFileApplied = state.appliedBackground
+    val listFiles = state.mediaFiles
 
     Row(
         modifier = modifier
@@ -131,7 +135,11 @@ fun MainScreen(
                     .clip(RoundedCornerShape(14.dp))
                     .background(AuraColors.SurfaceElevated)
                     .pointerHoverIcon(PointerIcon.Hand)
-                    .clickable { openFilePicker { archiveSelected -> viewModel.importNewFile(archiveSelected) } }
+                    .clickable {
+                        importScope.launch {
+                            openFilePicker()?.let(viewModel::importFile)
+                        }
+                    }
                     .padding(18.dp),
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically
@@ -228,7 +236,7 @@ fun MainScreen(
     }
 
     CustomAlertDialog(
-        showDialog = viewModel.viewDialogDeleted && selectedFile != null,
+        showDialog = state.showDeleteDialog && selectedFile != null,
         title = "Eliminar archivo",
         message = selectedFile?.let {
             "¿Estás seguro de que deseas eliminar '${it.name}'?\nEsta acción no se puede deshacer."
@@ -241,25 +249,25 @@ fun MainScreen(
         onConfirm = {
             // Si confirma, cerramos el diálogo y ejecutamos la acción de borrar
             viewModel.closeDeleteDialog()
-            viewModel.deleteMedia(selectedFile)
+            viewModel.deleteSelected()
         }
     )
 
     CustomAlertDialog(
-        showDialog = viewModel.errorMessage != null,
+        showDialog = state.errorMessage != null,
         title = "Error al importar",
-        message = viewModel.errorMessage.orEmpty(),
+        message = state.errorMessage.orEmpty(),
         onDismiss = { viewModel.clearError() }
     )
 
     // Confirmación antes de aplicar el fondo al tema SDDM.
     CustomAlertDialog(
-        showDialog = viewModel.viewDialogApply && selectedFile != null,
+        showDialog = state.showApplyDialog && selectedFile != null,
         title = "Aplicar fondo",
         message = selectedFile?.let { file ->
             buildString {
                 append("Se aplicará \"${file.name}\" como fondo del tema SDDM")
-                if (viewModel.currentTheme.isNotBlank()) append(" \"${viewModel.currentTheme}\"")
+                if (state.currentTheme.isNotBlank()) append(" \"${state.currentTheme}\"")
                 append(".\n\nSelecciona dónde aplicarlo. Se solicitarán permisos de administrador ")
                 append("si es necesario.")
             }
@@ -272,8 +280,8 @@ fun MainScreen(
         },
         content = {
             DestinationSelector(
-                selected = viewModel.destination,
-                supportsSeparateScreens = viewModel.supportsSeparateScreens,
+                selected = state.destination,
+                supportsSeparateScreens = state.supportsSeparateScreens,
                 onSelected = viewModel::selectDestination,
             )
         }
@@ -281,10 +289,18 @@ fun MainScreen(
 
     // Resultado de la aplicación (éxito o error).
     CustomAlertDialog(
-        showDialog = viewModel.applyMessage != null,
-        title = if (viewModel.applySucceeded) "Fondo aplicado" else "No se pudo aplicar",
-        message = viewModel.applyMessage.orEmpty(),
+        showDialog = state.applyMessage != null,
+        title = if (state.applySucceeded) "Fondo aplicado" else "No se pudo aplicar",
+        message = state.applyMessage.orEmpty(),
         onDismiss = { viewModel.clearApplyMessage() }
+    )
+
+    // Resultado de la previsualización con sddm-greeter.
+    CustomAlertDialog(
+        showDialog = state.previewMessage != null,
+        title = if (state.previewSucceeded) "Previsualización" else "No se pudo previsualizar",
+        message = state.previewMessage.orEmpty(),
+        onDismiss = { viewModel.clearPreviewMessage() }
     )
 }
 

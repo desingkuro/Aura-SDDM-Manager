@@ -1,8 +1,7 @@
 package com.example.aura.presentation.viewmodels
 
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import com.example.aura.data.repository.SddmRepositoryImpl
 import com.example.aura.domain.models.ChangeThemeResult
 import com.example.aura.domain.models.RestoreBackupResult
@@ -11,177 +10,247 @@ import com.example.aura.domain.models.SddmBackupKind
 import com.example.aura.domain.models.SddmDiagnostics
 import com.example.aura.domain.models.SddmTheme
 import com.example.aura.domain.repository.SddmRepository
-import kotlin.concurrent.thread
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
- * Estado de la pantalla de Ajustes: respaldos, diagnóstico y temas instalados.
+ * ViewModel de Ajustes. Expone un único [SettingsUiState] y ejecuta todo el
+ * trabajo de disco/permisos fuera del hilo de UI.
  */
 class SettingsViewModel(
     private val sddmRepository: SddmRepository = SddmRepositoryImpl(),
-) {
-    var backups by mutableStateOf<List<SddmBackup>>(emptyList())
-        private set
+) : ViewModel() {
 
-    var selectedBackup by mutableStateOf<SddmBackup?>(null)
-        private set
+    private val _uiState = MutableStateFlow(SettingsUiState())
+    val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
 
-    var showRestoreDialog by mutableStateOf(false)
-        private set
-
-    var isRestoring by mutableStateOf(false)
-        private set
-
-    var restoreMessage by mutableStateOf<String?>(null)
-        private set
-
-    var restoreSucceeded by mutableStateOf(false)
-        private set
-
-    var diagnostics by mutableStateOf<SddmDiagnostics?>(null)
-        private set
-
-    var themes by mutableStateOf<List<SddmTheme>>(emptyList())
-        private set
-
-    var currentTheme by mutableStateOf("")
-        private set
-
-    var isRefreshing by mutableStateOf(false)
-        private set
-
-    var selectedTheme by mutableStateOf<SddmTheme?>(null)
-        private set
-
-    var showThemeDialog by mutableStateOf(false)
-        private set
-
-    var isChangingTheme by mutableStateOf(false)
-        private set
-
-    var themeMessage by mutableStateOf<String?>(null)
-        private set
-
-    var themeChangeSucceeded by mutableStateOf(false)
-        private set
-
-    fun loadSettings() {
-        loadBackups()
+    init {
         refresh()
     }
 
-    fun loadBackups() {
-        backups = sddmRepository.listBackups()
-    }
-
     fun refresh() {
-        if (isRefreshing) return
-        isRefreshing = true
-        thread(isDaemon = true) {
-            try {
-                refreshRepositoryState()
-            } catch (e: Exception) {
-                println("No se pudo actualizar el diagnóstico: ${e.message}")
-            } finally {
-                isRefreshing = false
+        if (_uiState.value.isRefreshing) return
+
+        _uiState.update { it.copy(isRefreshing = true, refreshError = null) }
+        viewModelScope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) { loadSnapshot() }
+            }.onSuccess { snapshot ->
+                _uiState.update {
+                    it.copy(
+                        backups = snapshot.backups,
+                        diagnostics = snapshot.diagnostics,
+                        themes = snapshot.themes,
+                        currentTheme = snapshot.currentTheme,
+                        isRefreshing = false,
+                        refreshError = null,
+                    )
+                }
+            }.onFailure { error ->
+                _uiState.update {
+                    it.copy(
+                        isRefreshing = false,
+                        refreshError = "No se pudo actualizar el diagnóstico: " +
+                            (error.message ?: "error desconocido"),
+                    )
+                }
             }
         }
     }
 
-    private fun refreshRepositoryState() {
-        diagnostics = sddmRepository.getDiagnostics()
-        themes = sddmRepository.getInstalledThemes()
-        currentTheme = sddmRepository.getCurrentTheme()
-        backups = sddmRepository.listBackups()
-    }
-
     fun requestRestore(backup: SddmBackup) {
-        if (isRestoring) return
-        selectedBackup = backup
-        showRestoreDialog = true
+        if (_uiState.value.isRestoring) return
+        _uiState.update {
+            it.copy(
+                selectedBackup = backup,
+                showRestoreDialog = true,
+            )
+        }
     }
 
     fun cancelRestore() {
-        showRestoreDialog = false
-        selectedBackup = null
+        _uiState.update {
+            it.copy(
+                showRestoreDialog = false,
+                selectedBackup = null,
+            )
+        }
     }
 
     fun confirmRestore() {
-        val backup = selectedBackup ?: return
-        showRestoreDialog = false
-        if (isRestoring) return
+        val backup = _uiState.value.selectedBackup ?: return
+        if (_uiState.value.isRestoring) return
 
-        isRestoring = true
-        thread(isDaemon = true) {
-            try {
-                when (val result = sddmRepository.restoreBackup(backup.id)) {
-                    is RestoreBackupResult.Success -> {
-                        restoreSucceeded = true
-                        restoreMessage = buildRestoreMessage(result.backup)
-                    }
+        _uiState.update {
+            it.copy(
+                showRestoreDialog = false,
+                isRestoring = true,
+                restoreMessage = null,
+            )
+        }
+        viewModelScope.launch {
+            val result = runCatching {
+                withContext(Dispatchers.IO) { sddmRepository.restoreBackup(backup.id) }
+            }
+            val snapshot = runCatching {
+                withContext(Dispatchers.IO) { loadSnapshot() }
+            }.getOrNull()
 
-                    is RestoreBackupResult.Failure -> {
-                        restoreSucceeded = false
-                        restoreMessage = result.message
-                    }
+            _uiState.update { current ->
+                when (val restoreResult = result.getOrNull()) {
+                    is RestoreBackupResult.Success -> current.copy(
+                        isRestoring = false,
+                        selectedBackup = null,
+                        restoreSucceeded = true,
+                        restoreMessage = buildRestoreMessage(restoreResult.backup),
+                        backups = snapshot?.backups ?: current.backups,
+                        diagnostics = snapshot?.diagnostics ?: current.diagnostics,
+                        themes = snapshot?.themes ?: current.themes,
+                        currentTheme = snapshot?.currentTheme ?: current.currentTheme,
+                    )
+
+                    is RestoreBackupResult.Failure -> current.copy(
+                        isRestoring = false,
+                        selectedBackup = null,
+                        restoreSucceeded = false,
+                        restoreMessage = restoreResult.message,
+                        backups = snapshot?.backups ?: current.backups,
+                        diagnostics = snapshot?.diagnostics ?: current.diagnostics,
+                        themes = snapshot?.themes ?: current.themes,
+                        currentTheme = snapshot?.currentTheme ?: current.currentTheme,
+                    )
+
+                    null -> current.copy(
+                        isRestoring = false,
+                        selectedBackup = null,
+                        restoreSucceeded = false,
+                        restoreMessage = "No se pudo restaurar el respaldo: " +
+                            (result.exceptionOrNull()?.message ?: "error desconocido"),
+                        backups = snapshot?.backups ?: current.backups,
+                        diagnostics = snapshot?.diagnostics ?: current.diagnostics,
+                        themes = snapshot?.themes ?: current.themes,
+                        currentTheme = snapshot?.currentTheme ?: current.currentTheme,
+                    )
                 }
-            } finally {
-                isRestoring = false
-                selectedBackup = null
-                runCatching { refreshRepositoryState() }
             }
         }
     }
 
     fun requestThemeChange(theme: SddmTheme) {
-        if (isChangingTheme || theme.isCurrent) return
-        selectedTheme = theme
-        showThemeDialog = true
+        val state = _uiState.value
+        if (state.isChangingTheme || theme.isCurrent) return
+        _uiState.update {
+            it.copy(
+                selectedTheme = theme,
+                showThemeDialog = true,
+            )
+        }
     }
 
     fun cancelThemeChange() {
-        showThemeDialog = false
-        selectedTheme = null
+        _uiState.update {
+            it.copy(
+                showThemeDialog = false,
+                selectedTheme = null,
+            )
+        }
     }
 
     fun confirmThemeChange() {
-        val theme = selectedTheme ?: return
-        showThemeDialog = false
-        if (isChangingTheme) return
+        val theme = _uiState.value.selectedTheme ?: return
+        if (_uiState.value.isChangingTheme) return
 
-        isChangingTheme = true
-        thread(isDaemon = true) {
-            try {
-                when (val result = sddmRepository.changeTheme(theme.name)) {
-                    is ChangeThemeResult.Success -> {
-                        themeChangeSucceeded = true
+        _uiState.update {
+            it.copy(
+                showThemeDialog = false,
+                isChangingTheme = true,
+                themeMessage = null,
+            )
+        }
+        viewModelScope.launch {
+            val result = runCatching {
+                withContext(Dispatchers.IO) { sddmRepository.changeTheme(theme.name) }
+            }
+            val snapshot = runCatching {
+                withContext(Dispatchers.IO) { loadSnapshot() }
+            }.getOrNull()
+
+            _uiState.update { current ->
+                when (val changeResult = result.getOrNull()) {
+                    is ChangeThemeResult.Success -> current.copy(
+                        isChangingTheme = false,
+                        selectedTheme = null,
+                        themeChangeSucceeded = true,
                         themeMessage = buildString {
-                            append("Se cambió el tema de SDDM de \"${result.previousTheme}\" ")
-                            append("a \"${result.theme.displayName}\".")
-                            append("\n\nSe creó un respaldo automático del cambio de tema. ")
+                            append("Se cambió el tema de SDDM de \"")
+                            append(changeResult.previousTheme)
+                            append("\" a \"")
+                            append(changeResult.theme.displayName)
+                            append("\".\n\nSe creó un respaldo automático del cambio de tema. ")
                             append("Reinicia SDDM o cierra sesión para ver el nuevo tema.")
-                        }
-                    }
+                        },
+                        backups = snapshot?.backups ?: current.backups,
+                        diagnostics = snapshot?.diagnostics ?: current.diagnostics,
+                        themes = snapshot?.themes ?: current.themes,
+                        currentTheme = snapshot?.currentTheme ?: current.currentTheme,
+                    )
 
-                    is ChangeThemeResult.Failure -> {
-                        themeChangeSucceeded = false
-                        themeMessage = result.message
-                    }
+                    is ChangeThemeResult.Failure -> current.copy(
+                        isChangingTheme = false,
+                        selectedTheme = null,
+                        themeChangeSucceeded = false,
+                        themeMessage = changeResult.message,
+                        backups = snapshot?.backups ?: current.backups,
+                        diagnostics = snapshot?.diagnostics ?: current.diagnostics,
+                        themes = snapshot?.themes ?: current.themes,
+                        currentTheme = snapshot?.currentTheme ?: current.currentTheme,
+                    )
+
+                    null -> current.copy(
+                        isChangingTheme = false,
+                        selectedTheme = null,
+                        themeChangeSucceeded = false,
+                        themeMessage = "No se pudo cambiar el tema: " +
+                            (result.exceptionOrNull()?.message ?: "error desconocido"),
+                        backups = snapshot?.backups ?: current.backups,
+                        diagnostics = snapshot?.diagnostics ?: current.diagnostics,
+                        themes = snapshot?.themes ?: current.themes,
+                        currentTheme = snapshot?.currentTheme ?: current.currentTheme,
+                    )
                 }
-            } finally {
-                isChangingTheme = false
-                selectedTheme = null
-                runCatching { refreshRepositoryState() }
             }
         }
     }
 
     fun clearRestoreMessage() {
-        restoreMessage = null
+        _uiState.update { it.copy(restoreMessage = null) }
     }
 
     fun clearThemeMessage() {
-        themeMessage = null
+        _uiState.update { it.copy(themeMessage = null) }
     }
+
+    fun clearRefreshError() {
+        _uiState.update { it.copy(refreshError = null) }
+    }
+
+    /** Cancela el trabajo pendiente cuando la pantalla sale de composición. */
+    fun dispose() {
+        viewModelScope.cancel()
+    }
+
+    private fun loadSnapshot(): SettingsSnapshot = SettingsSnapshot(
+        backups = sddmRepository.listBackups(),
+        diagnostics = sddmRepository.getDiagnostics(),
+        themes = sddmRepository.getInstalledThemes(),
+        currentTheme = sddmRepository.getCurrentTheme(),
+    )
 
     private fun buildRestoreMessage(backup: SddmBackup): String = buildString {
         if (backup.kind == SddmBackupKind.THEME) {
@@ -198,4 +267,11 @@ class SettingsViewModel(
             append(".\n\nReinicia SDDM o cierra sesión para ver el cambio.")
         }
     }
+
+    private data class SettingsSnapshot(
+        val backups: List<SddmBackup>,
+        val diagnostics: SddmDiagnostics,
+        val themes: List<SddmTheme>,
+        val currentTheme: String,
+    )
 }
