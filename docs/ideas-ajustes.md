@@ -91,9 +91,10 @@ pruebas para reescritura selectiva.
 - La configuración se escribe en un temporal del mismo directorio y se publica
   con `rename` atómico, tanto directamente como mediante `pkexec`.
 
-**Estado:** implementado en `SddmRepositoryImpl`, `SettingsViewModel` y
-`SettingsScreen`, con 50 pruebas de respaldo, escritura atómica, destinos,
-detección y cambio de tema en directorios temporales.
+**Estado:** implementado en `ApplySddmBackgroundUseCase`,
+`ChangeThemeUseCase`, `SettingsViewModel` y `SettingsScreen`, con 54 pruebas de
+respaldo, escritura atómica, destinos, detección y cambio de tema en directorios
+temporales.
 
 **Esfuerzo:** Medio · **Depende de:** nada.
 

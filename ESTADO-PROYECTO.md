@@ -1,11 +1,11 @@
 # Estado del proyecto — Aura SDDM Manager
 
-> **Última actualización:** 21 de octubre de 2026
+> **Última actualización:** 22 de octubre de 2026
 > **Rama de trabajo:** `dev` · **Último bloque:** concurrencia con corrutinas,
-> validación canónica de rutas, transaccionalidad y permisos POSIX.
+> validación canónica de rutas, transaccionalidad, permisos POSIX y casos de uso.
 > **Sincronización:** `main` y `dev` se actualizan al publicar este bloque.
 > **Build:** `./gradlew clean :desktopApp:build :desktopApp:test` → correcto
-> (50 pruebas, 0 fallos).
+> (54 pruebas, 0 fallos).
 
 Este documento resume el estado real del proyecto, lo que falta, los puntos de
 mejora y un listado priorizado de ideas para seguir creciendo. Es un documento
@@ -27,9 +27,11 @@ seleccionar → previsualizar → aplicar funciona, cada operación deja un resp
 restaurable, la configuración se publica de forma atómica y el conjunto
 configuración + fondo se revierte si falla. La UI usa corrutinas, `StateFlow` y
 `viewModelScope`; las rutas del tema se validan de forma canónica y los permisos
-POSIX originales se conservan. La deuda principal ahora es extraer los casos de
-uso para adelgazar el repositorio, la **apariencia del tema** y la cobertura del
-flujo `pkexec` con dobles de prueba.
+POSIX originales se conservan. La orquestación ya vive en casos de uso
+(`ApplySddmBackground`, `CreateBackup`, `RestoreBackup`, `ValidatePermissions` y
+`ChangeTheme`) y el repositorio quedó como acceso a datos. La deuda principal
+ahora es la **apariencia del tema** y la cobertura del flujo `pkexec` con dobles
+de prueba.
 
 **Semáforo general**
 
@@ -40,7 +42,7 @@ flujo `pkexec` con dobles de prueba.
 | Aplicar cambios en SDDM | 🟢 Funcional, con destino y respaldo/restauración |
 | Previsualización | 🟢 Funcional |
 | Ajustes | 🟢 Respaldos, diagnóstico y selector de tema; apariencia pendiente |
-| Pruebas automatizadas | 🟢 50 pruebas del repositorio; falta automatizar `pkexec` real |
+| Pruebas automatizadas | 🟢 54 pruebas del repositorio; falta automatizar `pkexec` real |
 | Empaquetado / distribución | 🟡 Configurado, no verificado |
 | Documentación | 🟢 README + `docs/ideas-ajustes.md` + este archivo |
 
@@ -77,7 +79,7 @@ flujo `pkexec` con dobles de prueba.
 | Pantalla de Ajustes | 🟢 | Diagnóstico, tema y respaldos; apariencia pendiente |
 | Persistencia de preferencias | ❌ | No existe |
 | Respaldo / deshacer cambios | ✅ | Respaldo y restauración; no hay redo |
-| Tests del módulo desktop | 🟢 | 50 pruebas con directorios temporales |
+| Tests del módulo desktop | 🟢 | 54 pruebas con directorios temporales |
 | Internacionalización | ❌ | Textos en español hardcodeados |
 | Empaquetado probado | 🟡 | `nativeDistributions` configurado, sin verificar |
 
@@ -94,8 +96,11 @@ Aura/
 │       ├── domain/
 │       │   ├── models/          # Resultados, BackgroundDestination, SddmTheme,
 │       │   │                    # SddmDiagnostics, SddmBackup…
-│       │   └── repository/      # MediaRepository, SddmRepository
+│       │   ├── repository/      # MediaRepository, SddmRepository, SddmDataAccess
+│       │   └── usecase/         # ApplySddmBackground, CreateBackup, RestoreBackup,
+│       │                        # ChangeTheme, ValidatePermissions
 │       ├── presentation/
+│       │   ├── di/              # SddmModule (composition root mínimo)
 │       │   ├── ui/components/   # Sidebar, MainScreen, Footer, Destino, diálogos…
 │       │   ├── ui/screens/      # MediaScreen, SettingsScreen
 │       │   ├── ui/theme/        # AuraColors
@@ -107,16 +112,15 @@ Aura/
 └── ESTADO-PROYECTO.md           # Este documento
 ```
 
-**Capas:** `presentation` → `domain` (contratos/modelos) ← `data` (implementaciones).
-Es una Clean Architecture básica. La UI ya usa `StateFlow`/`viewModelScope`, pero
-todavía no hay una capa de casos de uso ni inyección de dependencias formal: ese
-es el siguiente refactor arquitectónico.
+**Capas:** `presentation` → `domain` (modelos, contratos y casos de uso) ← `data`
+(implementaciones de acceso a datos). La UI usa `StateFlow`/`viewModelScope` y
+los ViewModels delegan las operaciones de SDDM en casos de uso inyectables.
 
 **Flujo de aplicación de fondo**
 
 1. `FooterScreen` → diálogo de confirmación con `DestinationSelector`.
 2. `MediaViewModel.applySelectedBackground()` captura el destino y llama a
-   `SddmRepositoryImpl.applyBackground(file, destination)` en `Dispatchers.IO`.
+   `ApplySddmBackgroundUseCase(file, destination)` en `Dispatchers.IO`.
 3. Detecta tema y archivo de configuración (`metadata.desktop` → `ConfigFile`, o `theme.conf`).
 4. Valida todas las rutas con `PathValidator` y `canonicalPath`; si el
    `ConfigFile` o el fondo salen del tema, aborta con un error de seguridad.
@@ -131,8 +135,8 @@ es el siguiente refactor arquitectónico.
 **Flujo de cambio de tema**
 
 1. `SettingsScreen` lista los temas instalados y marca el actual.
-2. Al confirmar, `SddmRepositoryImpl.changeTheme()` crea un respaldo del tema y
-   de `current_bg.txt`.
+2. Al confirmar, `ChangeThemeUseCase` crea un respaldo del tema y de
+   `current_bg.txt` mediante `CreateBackupUseCase`.
 3. Escribe `[Theme] Current` en `/etc/sddm.conf.d/99-aura-theme.conf` (o en
    `/etc/sddm.conf` si no existe el directorio) con temporal + `rename`,
    conservando propietario/grupo/permisos.
@@ -171,11 +175,13 @@ es el siguiente refactor arquitectónico.
 - `PathValidator` resuelve symlinks y `..` con `canonicalPath`; bloquea
   `ConfigFile`, fondos, respaldos y configuración de SDDM fuera de las rutas
   permitidas.
-- El repositorio sigue concentrando demasiada lógica (config, pkexec, ffmpeg,
-  backups); falta extraer casos de uso y separar el acceso a datos.
+- La orquestación ya está en `domain/usecase`; `SddmRepositoryImpl` conserva las
+  primitivas de acceso a datos (config, pkexec, ffmpeg, backups). Falta una
+  inyección de dependencias formal y dividir esas primitivas en fuentes más
+  pequeñas.
 - El cambio de tema usa el nombre fijo `99-aura-theme.conf`; si otra distro
-  tiene un drop-in posterior, `changeTheme` revierte y devuelve error en lugar
-  de asumir éxito, pero convendría elegir dinámicamente el orden.
+  tiene un drop-in posterior, `ChangeThemeUseCase` revierte y devuelve error en
+  lugar de asumir éxito, pero convendría elegir dinámicamente el orden.
 - Los métodos de diagnóstico y detección de procesos usan `ProcessHandle`; en
   sesiones muy restringidas puede no detectar el agente Polkit.
 
@@ -189,7 +195,7 @@ es el siguiente refactor arquitectónico.
       Implementado con manifiesto, listado y restauración desde Ajustes.
 - [x] **Cubrir `SddmRepositoryImpl` con pruebas**: detección de tema/fondo,
       reescritura de `ConfigFile` y `theme.conf`, destinos, nombres con espacios,
-      videos, errores, respaldos y cambio de tema. 50 pruebas con directorios
+      videos, errores, respaldos y cambio de tema. 54 pruebas con directorios
       temporales.
 - [x] **Mejorar la gestión de permisos y errores de `Aplicar`**:
       - distingue cancelación de autenticación (126), autorización denegada (127)
@@ -212,9 +218,9 @@ es el siguiente refactor arquitectónico.
       fondo y scripts `pkexec` con trampa de error.
 - [x] **Validación canónica de rutas**: `PathValidator` bloquea *path traversal*
       en `ConfigFile`, fondos, respaldos y configuración de SDDM.
-- [ ] **Extraer casos de uso** (`ApplySddmBackground`, `CreateBackup`,
-      `RestoreBackup`, `ValidatePermissions`) y dejar el repositorio como
-      fachada de acceso a datos.
+- [x] **Extraer casos de uso** (`ApplySddmBackground`, `CreateBackup`,
+      `RestoreBackup`, `ValidatePermissions` y `ChangeTheme`) y dejar el
+      repositorio como acceso a datos (`SddmRepository` + `SddmDataAccess`).
 - [ ] **Limpiar código muerto y restos de plantilla**: `shared/`, `current_bg.txt`
       versionado, métodos sin uso.
 
@@ -271,10 +277,12 @@ es el siguiente refactor arquitectónico.
 
 ### 4.2 Arquitectura y código
 
-1. **Casos de uso** (`ApplyBackground`, `PreviewTheme`, `DetectEnvironment`)
-   para sacar lógica del repositorio y facilitar pruebas.
-2. **Inyección de dependencias** sencilla (constructor/manual) en lugar de
-   instanciar repositorios dentro del ViewModel.
+1. ~~**Casos de uso** para sacar lógica del repositorio y facilitar pruebas.~~
+   ✅ Hecho: `ApplySddmBackground`, `CreateBackup`, `RestoreBackup`,
+   `ValidatePermissions` y `ChangeTheme`; los ViewModels los inyectan por
+   constructor.
+2. **Inyección de dependencias** formal: hoy `SddmModule` es un *composition root*
+   mínimo; falta un contenedor y pruebas de ViewModels con dobles.
 3. ~~Unificar `ImageScreen` y `VideoScreeen`~~ ✅ Hecho: una sola sección `Fondos` con galería combinada (`MediaScreen` + `MediaType`).
 4. **Corregir nombres**: `MediaRepositoryImpl`.
 5. **Eliminar el módulo `shared`** si no se va a reutilizar, o mover allí los
@@ -419,12 +427,12 @@ y dotfiles.
 ### Corto plazo — v0.2 (estabilizar)
 
 1. [x] Backups + restauración.
-2. [x] Tests de `SddmRepositoryImpl` (50 pruebas).
+2. [x] Tests de `SddmRepositoryImpl` (54 pruebas).
 3. [x] Gestión de permisos/errores de `Aplicar` (cancelación, `pkexec` ausente).
 4. [x] Selector de destino login/bloqueo/ambos.
 5. [x] Concurrencia con `viewModelScope`/`StateFlow` y sin `thread { }`.
 6. [x] Validación canónica de rutas y transaccionalidad config+fondo.
-7. [ ] Extraer casos de uso y limpiar código muerto/módulo `shared`.
+7. [x] Extraer casos de uso y desacoplar los ViewModels del repositorio. Queda limpiar código muerto y el módulo `shared`.
 8. [x] Arreglar el diálogo de eliminar sin selección.
 
 ### Medio plazo — v0.3 (personalización)
@@ -453,7 +461,7 @@ y dotfiles.
 | Un cambio mal aplicado rompe el login | Alto | Backups + restauración + validación |
 | `pkexec` cancelado o sin agente Polkit | Medio | Mensajes diferenciados (125/126/127), diagnóstico y reintento |
 | Diferencias entre temas/distros | Medio | Rutas configurables (pendiente) y detección robusta |
-| Otro drop-in de SDDM con más prioridad | Medio | `changeTheme` verifica el tema efectivo y avisa del conflicto |
+| Otro drop-in de SDDM con más prioridad | Medio | `ChangeThemeUseCase` verifica el tema efectivo y avisa del conflicto |
 | Videos con códecs no soportados | Medio | Validación/transcodificación |
 | GIF como fondo | Alto (puede crashear SDDM) | Bloquear o convertir a video/imagen |
 | Config a medio escribir | Bajo | Temporal + `rename` atómico (implementado) |
@@ -472,7 +480,7 @@ y dotfiles.
   falta probar el flujo `pkexec` real de forma automatizada.
 - No detecta fondos definidos únicamente por color.
 - No reinicia SDDM; el usuario debe cerrar sesión o reiniciar el servicio.
-- La cobertura es de 50 pruebas del repositorio; el flujo real con `pkexec`
+- La cobertura es de 54 pruebas del repositorio; el flujo real con `pkexec`
   interactivo aún no se automatiza.
 
 ---

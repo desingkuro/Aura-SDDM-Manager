@@ -93,8 +93,8 @@ Aura/
 ├── desktopApp/
 │   └── src/main/kotlin/com/example/aura/
 │       ├── data/                 # Implementaciones de almacenamiento y acceso local
-│       ├── domain/               # Modelos e interfaces de repositorio
-│       └── presentation/         # UI Compose, navegación, utilidades y viewmodels
+│       ├── domain/               # Modelos, contratos y casos de uso
+│       └── presentation/         # UI Compose, navegación, utilidades, viewmodels y DI
 ├── shared/                       # Código compartido de Kotlin Multiplatform
 └── gradle/                       # Configuración de dependencias y wrapper
 ```
@@ -109,7 +109,7 @@ Contiene la interfaz de usuario, navegación, componentes visuales, utilidades d
 - `MediaScreen`: pantalla única de fondos que muestra imágenes y videos en la misma galería.
 - `SettingsScreen`: ajustes avanzados; incluye diagnóstico, selector de tema y listado/restauración de respaldos.
 - `components/`: sidebar, tarjetas, header, footer, selector de destino, diálogos y panel principal.
-- `viewmodels/`: estados de imágenes, videos, selección, fondo aplicado, errores y previsualización SDDM; `MediaType` distingue el tipo de cada archivo y `SettingsViewModel` gestiona respaldos, diagnóstico y cambio de tema.
+- `viewmodels/`: estados de imágenes, videos, selección, fondo aplicado, errores y previsualización SDDM; `MediaType` distingue el tipo de cada archivo y `SettingsViewModel` gestiona respaldos, diagnóstico y cambio de tema. Las operaciones de SDDM se delegan en casos de uso inyectados por constructor.
 - `utils/`: selector de archivos y conversión a `ImageBitmap`.
 
 ### Domain
@@ -117,7 +117,9 @@ Contiene la interfaz de usuario, navegación, componentes visuales, utilidades d
 Contiene contratos y modelos independientes de la UI.
 
 - `MediaRepository`: contrato para listar, importar y eliminar archivos multimedia.
-- `SddmRepository`: contrato para detectar tema/fondo, ubicar el greeter, previsualizar, aplicar fondos, gestionar respaldos, listar temas, diagnosticar el entorno y cambiar de tema.
+- `SddmRepository`: contrato de consulta para detectar tema/fondo, previsualizar, listar respaldos, listar temas y diagnosticar el entorno.
+- `SddmDataAccess`: primitivas de acceso a datos de SDDM (resolver rutas, leer/escribir configuración, crear respaldos, ejecutar operaciones elevadas).
+- `usecase/`: orquestación de negocio: `ApplySddmBackgroundUseCase`, `CreateBackupUseCase`, `RestoreBackupUseCase`, `ValidatePermissionsUseCase` y `ChangeThemeUseCase`.
 - `models/`: resultados de aplicar/restaurar/cambiar tema, destinos de fondo (`BackgroundDestination`), temas instalados (`SddmTheme`), diagnóstico (`SddmDiagnostics`) y datos de los respaldos (`SddmBackup`).
 
 ### Data
@@ -125,7 +127,7 @@ Contiene contratos y modelos independientes de la UI.
 Contiene las implementaciones de repositorio y utilidades de almacenamiento local.
 
 - `MediaRepositoryImple`: filtra imágenes/videos y copia archivos al almacenamiento local.
-- `SddmRepositoryImpl`: acceso y orquestación de SDDM: detecta el tema actual, resuelve el fondo aplicado, lanza `sddm-greeter`, crea respaldos, restaura configuraciones, lista temas, diagnostica dependencias y cambia el tema activo.
+- `SddmRepositoryImpl`: implementación de acceso a datos de SDDM: detecta el tema actual, resuelve el fondo aplicado, lanza `sddm-greeter`, lee/escribe configuración, crea y restaura respaldos, lista temas y diagnostica dependencias. La orquestación de negocio vive en `domain/usecase`.
 - `PathValidator`: valida rutas canónicas y bloquea *path traversal* en `metadata.desktop`, fondos, respaldos y configuración de SDDM.
 - `StorageManager`: crea/usa el directorio local de medios.
 
@@ -170,8 +172,8 @@ El manifiesto se escribe al final y se publica con un movimiento atómico: si un
 
 ## Próximos pasos
 
-1. Extraer casos de uso (`ApplySddmBackground`, `CreateBackup`, `RestoreBackup` y `ValidatePermissions`) para que `SddmRepositoryImpl` quede como fachada de acceso a datos.
-2. Automatizar el flujo con `pkexec` mediante inyección o un helper Polkit dedicado.
+1. Añadir pruebas de ViewModels y casos de uso con dobles de `SddmDataAccess` y del flujo `pkexec` (sin tocar el sistema real).
+2. Dividir `SddmRepositoryImpl` en fuentes de datos más pequeñas (configuración, temas, respaldos y privilegios).
 3. Detectar fondos definidos únicamente por color.
 4. Caché de miniaturas, gestión de almacenamiento y limpieza de respaldos.
 5. Opciones de apariencia del tema (relleno, blur, brillo, saturación).
