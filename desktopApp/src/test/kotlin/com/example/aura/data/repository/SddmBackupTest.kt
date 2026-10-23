@@ -17,7 +17,7 @@ class SddmBackupTest {
         try {
             env.source.writeText("new-bytes")
 
-            val applyResult = env.repository.applyBackground(env.source)
+            val applyResult = env.applyBackgroundUseCase(env.source)
             assertTrue(applyResult is ApplyBackgroundResult.Success)
             assertTrue(env.themeConfig.readText().contains("source.jpg"))
             env.assertNoAtomicTemps()
@@ -35,7 +35,7 @@ class SddmBackupTest {
             File(env.backgroundsDir, "source.jpg").delete()
             env.currentBg.writeText("broken-path")
 
-            val restoreResult = env.repository.restoreBackup(backup.id)
+            val restoreResult = env.restoreBackupUseCase(backup.id)
             assertTrue(restoreResult is RestoreBackupResult.Success)
             assertTrue(env.themeConfig.readText().contains("old.jpg"))
             assertEquals(env.oldBackground.absolutePath, env.currentBg.readText())
@@ -53,7 +53,7 @@ class SddmBackupTest {
         try {
             val replacement = File(env.root, "old.jpg").apply { writeText("new-bytes") }
 
-            val applyResult = env.repository.applyBackground(replacement)
+            val applyResult = env.applyBackgroundUseCase(replacement)
             assertTrue(applyResult is ApplyBackgroundResult.Success)
             assertEquals("new-bytes", env.oldBackground.readText())
             env.assertNoAtomicTemps()
@@ -63,7 +63,7 @@ class SddmBackupTest {
 
             env.oldBackground.writeText("changed-after-apply")
 
-            val restoreResult = env.repository.restoreBackup(backup.id)
+            val restoreResult = env.restoreBackupUseCase(backup.id)
             assertTrue(restoreResult is RestoreBackupResult.Success)
             assertEquals("old-bytes", env.oldBackground.readText())
             assertTrue(env.themeConfig.readText().contains("old.jpg"))
@@ -84,7 +84,7 @@ class SddmBackupTest {
             assertTrue(Files.isSymbolicLink(env.themeConfig.toPath()))
 
             env.source.writeText("new-bytes")
-            val applyResult = env.repository.applyBackground(env.source)
+            val applyResult = env.applyBackgroundUseCase(env.source)
             assertTrue(applyResult is ApplyBackgroundResult.Success)
             assertTrue(Files.isSymbolicLink(env.themeConfig.toPath()))
             assertTrue(realConfig.readText().contains("source.jpg"))
@@ -112,7 +112,7 @@ class SddmBackupTest {
     fun `rechaza identificadores de respaldo con traversal`() {
         val env = SddmTestEnvironment()
         try {
-            val result = env.repository.restoreBackup("../etc")
+            val result = env.restoreBackupUseCase("../etc")
             assertTrue(result is RestoreBackupResult.Failure)
         } finally {
             env.close()
@@ -132,7 +132,7 @@ class SddmBackupTest {
             )
 
             assertTrue(env.repository.listBackups().isEmpty())
-            val result = env.repository.restoreBackup("evil")
+            val result = env.restoreBackupUseCase("evil")
             assertTrue(result is RestoreBackupResult.Failure)
         } finally {
             env.close()

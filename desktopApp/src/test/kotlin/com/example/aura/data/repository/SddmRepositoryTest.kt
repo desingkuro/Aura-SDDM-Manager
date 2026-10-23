@@ -57,7 +57,7 @@ class SddmRepositoryTest {
         try {
             env.source.writeText("new-bytes")
 
-            val result = env.repository.applyBackground(env.source)
+            val result = env.applyBackgroundUseCase(env.source)
 
             assertTrue(result is ApplyBackgroundResult.Success)
             assertEquals("source.jpg", result.backgroundName)
@@ -81,7 +81,7 @@ class SddmRepositoryTest {
         try {
             env.source.writeText("new-bytes")
 
-            val result = env.repository.applyBackground(
+            val result = env.applyBackgroundUseCase(
                 env.source,
                 BackgroundDestination.LOGIN,
             )
@@ -101,7 +101,7 @@ class SddmRepositoryTest {
         try {
             env.source.writeText("new-bytes")
 
-            val result = env.repository.applyBackground(
+            val result = env.applyBackgroundUseCase(
                 env.source,
                 BackgroundDestination.LOCK,
             )
@@ -124,7 +124,7 @@ class SddmRepositoryTest {
             )
             env.source.writeText("new-bytes")
 
-            val result = env.repository.applyBackground(
+            val result = env.applyBackgroundUseCase(
                 env.source,
                 BackgroundDestination.LOGIN,
             )
@@ -147,7 +147,7 @@ class SddmRepositoryTest {
             env.createTraditionalTheme()
             env.source.writeText("new-bytes")
 
-            val result = env.repository.applyBackground(
+            val result = env.applyBackgroundUseCase(
                 env.source,
                 BackgroundDestination.LOGIN,
             )
@@ -180,7 +180,7 @@ class SddmRepositoryTest {
             env.themeConfig.writeText("[General]\nfoo=bar\n")
             env.source.writeText("new-bytes")
 
-            val result = env.repository.applyBackground(env.source)
+            val result = env.applyBackgroundUseCase(env.source)
 
             assertTrue(result is ApplyBackgroundResult.Success)
             val config = env.themeConfig.readText()
@@ -199,7 +199,7 @@ class SddmRepositoryTest {
             val traditionalThemeDir = env.createTraditionalTheme()
             env.source.writeText("new-bytes")
 
-            val result = env.repository.applyBackground(env.source)
+            val result = env.applyBackgroundUseCase(env.source)
 
             assertTrue(result is ApplyBackgroundResult.Success)
             assertEquals("traditional", result.themeName)
@@ -220,7 +220,7 @@ class SddmRepositoryTest {
         try {
             val source = File(env.root, "fondo de prueba ñ.jpg").apply { writeText("new-bytes") }
 
-            val result = env.repository.applyBackground(source)
+            val result = env.applyBackgroundUseCase(source)
 
             assertTrue(result is ApplyBackgroundResult.Success)
             assertEquals("fondo de prueba ñ.jpg", result.backgroundName)
@@ -304,7 +304,7 @@ class SddmRepositoryTest {
             env.source.writeText("new-bytes")
             env.sddmConf.writeText("[Theme]\nCurrent=missing\n")
 
-            val result = env.repository.applyBackground(env.source)
+            val result = env.applyBackgroundUseCase(env.source)
 
             assertTrue(result is ApplyBackgroundResult.Failure)
             assertTrue(result.message.contains("No se encontró el tema"))
@@ -324,7 +324,7 @@ class SddmRepositoryTest {
             env.sddmConf.writeText("[Theme]\nCurrent=broken\n")
             env.source.writeText("new-bytes")
 
-            val result = env.repository.applyBackground(env.source)
+            val result = env.applyBackgroundUseCase(env.source)
 
             assertTrue(result is ApplyBackgroundResult.Failure)
             assertTrue(result.message.contains("No se encontró el archivo de configuración"))
@@ -339,7 +339,7 @@ class SddmRepositoryTest {
         try {
             val missing = File(env.root, "missing.jpg")
 
-            val result = env.repository.applyBackground(missing)
+            val result = env.applyBackgroundUseCase(missing)
 
             assertTrue(result is ApplyBackgroundResult.Failure)
             assertTrue(result.message.contains("ya no existe"))
@@ -358,7 +358,7 @@ class SddmRepositoryTest {
             )
             env.source.writeText("new-bytes")
 
-            val result = env.repository.applyBackground(env.source)
+            val result = env.applyBackgroundUseCase(env.source)
 
             assertTrue(result is ApplyBackgroundResult.Success)
             assertEquals(
@@ -381,7 +381,7 @@ class SddmRepositoryTest {
             )
             env.source.writeText("new-bytes")
 
-            val result = env.repository.applyBackground(env.source)
+            val result = env.applyBackgroundUseCase(env.source)
 
             assertTrue(result is ApplyBackgroundResult.Success)
             assertEquals("new-bytes", target.readText())
@@ -406,7 +406,7 @@ class SddmRepositoryTest {
                 PosixFilePermissions.fromString("r-x------"),
             )
 
-            val result = env.repository.applyBackground(env.source)
+            val result = env.applyBackgroundUseCase(env.source)
 
             assertTrue(result is ApplyBackgroundResult.Failure)
             assertFalse(File(env.backgroundsDir, "source.jpg").exists())
@@ -429,7 +429,7 @@ class SddmRepositoryTest {
             )
             env.source.writeText("new-bytes")
 
-            val result = env.repository.applyBackground(env.source)
+            val result = env.applyBackgroundUseCase(env.source)
 
             assertTrue(result is ApplyBackgroundResult.Failure)
             assertTrue(result.message.contains("fuera"))

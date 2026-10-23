@@ -1,14 +1,18 @@
 package com.example.aura.domain.repository
 
-import com.example.aura.domain.models.ApplyBackgroundResult
 import com.example.aura.domain.models.BackgroundDestination
-import com.example.aura.domain.models.ChangeThemeResult
-import com.example.aura.domain.models.RestoreBackupResult
 import com.example.aura.domain.models.SddmBackup
 import com.example.aura.domain.models.SddmDiagnostics
 import com.example.aura.domain.models.SddmTheme
 import java.io.File
 
+/**
+ * Contrato de acceso a los datos de SDDM.
+ *
+ * Las operaciones que combinan varios pasos (aplicar un fondo, cambiar de tema o
+ * restaurar un respaldo) viven en `domain/usecase`; este repositorio solo lee,
+ * escribe y lista los recursos del sistema.
+ */
 interface SddmRepository {
     fun getCurrentTheme(): String
     fun getAppliedBackground(): Pair<File, String>?
@@ -31,18 +35,6 @@ interface SddmRepository {
         destination: BackgroundDestination = BackgroundDestination.BOTH,
     ): String?
 
-    /**
-     * Aplica [background] (imagen o video) al tema SDDM actual: crea un respaldo
-     * de la configuración anterior, copia el archivo a la carpeta `backgrounds/`
-     * del tema y reescribe su configuración para que las pantallas indicadas en
-     * [destination] lo usen. Si el tema requiere privilegios de administrador, se
-     * solicitan mediante `pkexec`.
-     */
-    fun applyBackground(
-        background: File,
-        destination: BackgroundDestination = BackgroundDestination.BOTH,
-    ): ApplyBackgroundResult
-
     /** Lista los respaldos disponibles, del más reciente al más antiguo. */
     fun listBackups(): List<SddmBackup>
 
@@ -51,17 +43,4 @@ interface SddmRepository {
 
     /** Comprueba el tema actual, las rutas, los permisos y las dependencias externas. */
     fun getDiagnostics(): SddmDiagnostics
-
-    /**
-     * Cambia el tema activo de SDDM. Antes de escribir la configuración crea un
-     * respaldo restaurable; si hace falta, solicita permisos con `pkexec`.
-     */
-    fun changeTheme(themeName: String): ChangeThemeResult
-
-    /**
-     * Restaura la configuración guardada en el respaldo [backupId]. Para fondos
-     * recupera también el archivo anterior; para temas, la configuración de SDDM.
-     * No elimina el respaldo, por lo que puede reintentarse.
-     */
-    fun restoreBackup(backupId: String): RestoreBackupResult
 }

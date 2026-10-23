@@ -69,7 +69,7 @@ class SddmThemeTest {
         try {
             env.createTraditionalTheme(name = "traditional", makeCurrent = false)
 
-            val result = env.repository.changeTheme("traditional")
+            val result = env.changeThemeUseCase("traditional")
 
             assertTrue(result is ChangeThemeResult.Success)
             assertEquals("silent", result.previousTheme)
@@ -86,7 +86,7 @@ class SddmThemeTest {
             assertEquals("silent", backup.themeName)
             assertEquals("traditional", backup.newThemeName)
 
-            val restoreResult = env.repository.restoreBackup(backup.id)
+            val restoreResult = env.restoreBackupUseCase(backup.id)
 
             assertTrue(restoreResult is RestoreBackupResult.Success)
             assertEquals("silent", env.repository.getCurrentTheme())
@@ -104,14 +104,14 @@ class SddmThemeTest {
             env.sddmConfDir.deleteRecursively()
             env.createTraditionalTheme(name = "traditional", makeCurrent = false)
 
-            val result = env.repository.changeTheme("traditional")
+            val result = env.changeThemeUseCase("traditional")
 
             assertTrue(result is ChangeThemeResult.Success)
             assertEquals("traditional", env.repository.getCurrentTheme())
             assertTrue(env.sddmConf.readText().contains("Current=traditional"))
 
             val backup = env.repository.listBackups().single()
-            val restoreResult = env.repository.restoreBackup(backup.id)
+            val restoreResult = env.restoreBackupUseCase(backup.id)
 
             assertTrue(restoreResult is RestoreBackupResult.Success)
             assertEquals("silent", env.repository.getCurrentTheme())
@@ -125,7 +125,7 @@ class SddmThemeTest {
     fun `no crea respaldo si el tema ya es el actual`() {
         val env = SddmTestEnvironment()
         try {
-            val result = env.repository.changeTheme("silent")
+            val result = env.changeThemeUseCase("silent")
 
             assertTrue(result is ChangeThemeResult.Success)
             assertTrue(env.repository.listBackups().isEmpty())
@@ -138,8 +138,8 @@ class SddmThemeTest {
     fun `rechaza temas inexistentes y rutas fuera del directorio`() {
         val env = SddmTestEnvironment()
         try {
-            assertTrue(env.repository.changeTheme("missing") is ChangeThemeResult.Failure)
-            assertTrue(env.repository.changeTheme("../etc") is ChangeThemeResult.Failure)
+            assertTrue(env.changeThemeUseCase("missing") is ChangeThemeResult.Failure)
+            assertTrue(env.changeThemeUseCase("../etc") is ChangeThemeResult.Failure)
         } finally {
             env.close()
         }
@@ -164,7 +164,7 @@ class SddmThemeTest {
                 """.trimIndent()
             )
 
-            val result = env.repository.restoreBackup("tema-manipulado")
+            val result = env.restoreBackupUseCase("tema-manipulado")
 
             assertTrue(result is RestoreBackupResult.Failure)
             assertTrue(result.message.contains("fuera de las rutas permitidas"))
@@ -179,7 +179,7 @@ class SddmThemeTest {
         try {
             env.createTraditionalTheme(name = "traditional", makeCurrent = false)
 
-            env.repository.changeTheme("traditional")
+            env.changeThemeUseCase("traditional")
 
             val backup = env.repository.listBackups().single()
             val backupDir = File(env.backupsDir, backup.id)

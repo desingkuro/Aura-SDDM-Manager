@@ -3,11 +3,12 @@ package com.example.aura.presentation.viewmodels
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.aura.data.repository.MediaRepositoryImple
-import com.example.aura.data.repository.SddmRepositoryImpl
 import com.example.aura.domain.models.ApplyBackgroundResult
 import com.example.aura.domain.models.BackgroundDestination
 import com.example.aura.domain.repository.MediaRepository
 import com.example.aura.domain.repository.SddmRepository
+import com.example.aura.domain.usecase.ApplySddmBackgroundUseCase
+import com.example.aura.presentation.di.SddmModule
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
@@ -25,7 +26,9 @@ import java.io.File
  */
 class MediaViewModel(
     private val mediaRepository: MediaRepository = MediaRepositoryImple(),
-    private val sddmRepository: SddmRepository = SddmRepositoryImpl(),
+    private val sddmRepository: SddmRepository = SddmModule.repository,
+    private val applyBackgroundUseCase: ApplySddmBackgroundUseCase =
+        SddmModule.applyBackground,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(MediaUiState())
@@ -219,7 +222,7 @@ class MediaViewModel(
         viewModelScope.launch {
             val result = runCatching {
                 withContext(Dispatchers.IO) {
-                    sddmRepository.applyBackground(file, target)
+                    applyBackgroundUseCase(file, target)
                 }
             }
 

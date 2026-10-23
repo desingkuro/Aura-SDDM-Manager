@@ -1,5 +1,8 @@
 package com.example.aura.data.repository
 
+import com.example.aura.domain.usecase.ApplySddmBackgroundUseCase
+import com.example.aura.domain.usecase.ChangeThemeUseCase
+import com.example.aura.domain.usecase.RestoreBackupUseCase
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.attribute.PosixFilePermissions
@@ -28,6 +31,15 @@ internal class SddmTestEnvironment {
     }
     val sddmConfDir: File = File(root, "sddm.conf.d").apply { mkdirs() }
     val repository: SddmRepositoryImpl
+    val applyBackgroundUseCase: ApplySddmBackgroundUseCase by lazy {
+        ApplySddmBackgroundUseCase(repository)
+    }
+    val changeThemeUseCase: ChangeThemeUseCase by lazy {
+        ChangeThemeUseCase(repository)
+    }
+    val restoreBackupUseCase: RestoreBackupUseCase by lazy {
+        RestoreBackupUseCase(repository)
+    }
     var initialConfigPermissions: String = ""
 
     init {

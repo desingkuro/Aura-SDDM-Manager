@@ -2,9 +2,7 @@ package com.example.aura.data.repository
 
 import com.example.aura.data.security.PathValidationException
 import com.example.aura.data.security.PathValidator
-import com.example.aura.domain.models.ApplyBackgroundResult
 import com.example.aura.domain.models.BackgroundDestination
-import com.example.aura.domain.models.ChangeThemeResult
 import com.example.aura.domain.models.DiagnosticStatus
 import com.example.aura.domain.models.RestoreBackupResult
 import com.example.aura.domain.models.SddmBackup
@@ -12,6 +10,7 @@ import com.example.aura.domain.models.SddmBackupKind
 import com.example.aura.domain.models.SddmDiagnostic
 import com.example.aura.domain.models.SddmDiagnostics
 import com.example.aura.domain.models.SddmTheme
+import com.example.aura.domain.repository.SddmDataAccess
 import com.example.aura.domain.repository.SddmRepository
 import java.io.File
 import java.io.IOException
@@ -38,18 +37,18 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 
 class SddmRepositoryImpl(
-    private val appliedBackgroundFile: File = File(System.getProperty("user.home"), ".local/share/Aura/current_bg.txt"),
-    private val themesDir: File = File("/usr/share/sddm/themes"),
-    private val sddmConfFile: File = File("/etc/sddm.conf"),
-    private val sddmConfDir: File = File("/etc/sddm.conf.d"),
-    private val backupsDir: File = File(System.getProperty("user.home"), ".local/share/Aura/backups"),
+    override val appliedBackgroundFile: File = File(System.getProperty("user.home"), ".local/share/Aura/current_bg.txt"),
+    override val themesDir: File = File("/usr/share/sddm/themes"),
+    internal val sddmConfFile: File = File("/etc/sddm.conf"),
+    internal val sddmConfDir: File = File("/etc/sddm.conf.d"),
+    override val backupsDir: File = File(System.getProperty("user.home"), ".local/share/Aura/backups"),
     private val pathValidator: PathValidator = PathValidator(themesDir, sddmConfFile, sddmConfDir),
-) : SddmRepository {
+) : SddmRepository, SddmDataAccess {
 
     private val videoExtensions = listOf("mp4", "mkv", "avi", "mov", "wmv", "flv", "webm", "m4v")
     private val backupTimestampFormatter = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")
         .withZone(ZoneId.systemDefault())
-    private val backupManifestName = "backup.properties"
+    override val backupManifestName = "backup.properties"
 
     override fun getCurrentTheme(): String {
         val themeRegex = """(?i)^\s*Current\s*=\s*["']?([^"'\s#]+)["']?""".toRegex()
@@ -236,89 +235,6 @@ class SddmRepositoryImpl(
         return SddmDiagnostics(checkedAt = Instant.now(), items = items)
     }
 
-    override fun changeTheme(themeName: String): ChangeThemeResult {
-        val themeDir = resolveThemeDir(themeName)
-            ?: return ChangeThemeResult.Failure("Nombre de tema inválido o tema no encontrado.")
-        val theme = getInstalledThemes().firstOrNull { it.name == themeName }
-            ?: return ChangeThemeResult.Failure(
-                "El tema \"$themeName\" no tiene una configuración compatible."
-            )
-        val previousTheme = getCurrentTheme()
-        if (previousTheme == themeName) {
-            return ChangeThemeResult.Success(previousTheme, theme.copy(isCurrent = true))
-        }
-
-        val configFile = try {
-            themeConfigTarget()
-        } catch (error: PathValidationException) {
-            return ChangeThemeResult.Failure(
-                "No se puede escribir la configuración de SDDM: ${error.message}"
-            )
-        }
-        val configWritable = isConfigFileWritable(configFile)
-        if (!configWritable && getPkexecPath().isBlank()) {
-            return ChangeThemeResult.Failure(
-                "No se puede cambiar el tema sin permisos de administrador. No se encontró " +
-                    "pkexec: instala PolicyKit (por ejemplo, el paquete \"polkit\") para continuar."
-            )
-        }
-
-        val backupDir = try {
-            createThemeBackup(previousTheme, themeName, configFile)
-        } catch (e: Exception) {
-            return ChangeThemeResult.Failure(
-                "No se pudo crear el respaldo del tema. No se cambió la configuración. " +
-                    "Detalle: ${e.message ?: "error desconocido"}"
-            )
-        }
-        println("Respaldo de tema creado en ${backupDir.absolutePath}")
-
-        val content = "[Theme]\nCurrent=$themeName\n"
-        val error = if (configWritable) {
-            try {
-                writeConfigAtomically(configFile, content)
-                null
-            } catch (e: Exception) {
-                "No se pudo cambiar el tema: ${e.message ?: "error desconocido"}"
-            }
-        } else {
-            writeThemeConfigWithElevatedPrivileges(configFile, content)
-        }
-        if (error != null) {
-            return ChangeThemeResult.Failure(error)
-        }
-
-        val effectiveTheme = getCurrentTheme()
-        if (effectiveTheme != themeName) {
-            val configExisted = File(backupDir, "sddm-config").isFile
-            val rollback = runCatching {
-                restoreThemeConfigDirectly(backupDir, configFile, configExisted)
-            }
-            val rollbackDetail = if (rollback.isSuccess) {
-                " Se revirtió la configuración anterior."
-            } else {
-                " Además, no se pudo revertir la configuración anterior: " +
-                    "${rollback.exceptionOrNull()?.message ?: "error desconocido"}"
-            }
-            return ChangeThemeResult.Failure(
-                "Se guardó el tema en ${configFile.absolutePath}, pero SDDM sigue leyendo " +
-                    "\"$effectiveTheme\". Revisa si otro archivo de configuración tiene prioridad." +
-                    rollbackDetail
-            )
-        }
-
-        // El fondo registrado pertenece al tema anterior. Al cambiar de tema se
-        // deja que el nuevo tema determine su propio fondo. Solo se limpia cuando
-        // el cambio ya fue confirmado por SDDM.
-        try {
-            Files.deleteIfExists(appliedBackgroundFile.toPath())
-        } catch (e: Exception) {
-            println("No se pudo limpiar el fondo aplicado anterior: ${e.message}")
-        }
-
-        return ChangeThemeResult.Success(previousTheme, theme.copy(isCurrent = true))
-    }
-
     override fun getGreeterPath(): String {
         findExecutable("sddm-greeter-qt6")?.let { return it }
         findExecutable("sddm-greeter")?.let { return it }
@@ -401,155 +317,13 @@ class SddmRepositoryImpl(
         }
     }
 
-    override fun applyBackground(
-        background: File,
-        destination: BackgroundDestination,
-    ): ApplyBackgroundResult {
-        if (!background.isFile) {
-            return ApplyBackgroundResult.Failure("El archivo seleccionado ya no existe.")
-        }
-
-        return try {
-            val themeName = getCurrentTheme()
-            val themeDir = pathValidator.resolveThemeDir(themeName)
-                ?: return ApplyBackgroundResult.Failure(
-                    "No se encontró el tema \"$themeName\" dentro de ${themesDir.absolutePath}."
-                )
-
-            val sourceBackgroundsDir = themeDir.listFiles()
-                ?.firstOrNull { it.isDirectory && it.name.equals("backgrounds", ignoreCase = true) }
-            val backgroundsDirName = sourceBackgroundsDir?.name ?: "backgrounds"
-            val backgroundsDir = pathValidator.requireInside(
-                themeDir,
-                File(themeDir, backgroundsDirName),
-                "carpeta de fondos",
-            )
-            val targetBackground = pathValidator.requireInside(
-                backgroundsDir,
-                File(backgroundsDir, background.name),
-                "fondo de destino",
-            )
-
-            val configuredRelativePath = readConfiguredThemePath(themeDir)
-            val themeConfigFile: File
-            val newConfigContent: String
-
-            if (configuredRelativePath != null) {
-                themeConfigFile = pathValidator.resolveThemeConfig(themeDir, configuredRelativePath)
-                if (!themeConfigFile.isFile) {
-                    return ApplyBackgroundResult.Failure(
-                        "No se encontró el archivo de configuración del tema \"$themeName\"."
-                    )
-                }
-                newConfigContent = buildConfiguredThemePreview(
-                    content = themeConfigFile.readText(),
-                    backgroundName = background.name,
-                    destination = destination,
-                )
-            } else {
-                if (destination != BackgroundDestination.BOTH) {
-                    return ApplyBackgroundResult.Failure(
-                        "El tema \"$themeName\" usa un fondo general y no distingue entre login " +
-                            "y bloqueo. Selecciona \"Ambos\" para aplicar el fondo."
-                    )
-                }
-                themeConfigFile = pathValidator.requireInside(
-                    themeDir,
-                    File(themeDir, "theme.conf"),
-                    "configuración tradicional del tema",
-                )
-                if (!themeConfigFile.isFile) {
-                    return ApplyBackgroundResult.Failure(
-                        "El tema \"$themeName\" no tiene una configuración de fondo compatible."
-                    )
-                }
-                newConfigContent = buildThemeConfPreview(
-                    content = themeConfigFile.readText(),
-                    fileName = background.name,
-                    backgroundsFolder = backgroundsDirName,
-                )
-            }
-
-            // Si la carpeta de fondos aún no existe, se comprueba el directorio del
-            // tema que la contendrá, ya que Files.isWritable da false en rutas inexistentes.
-            val backgroundsWritable = if (backgroundsDir.exists()) {
-                Files.isWritable(backgroundsDir.toPath())
-            } else {
-                Files.isWritable(themeDir.toPath())
-            }
-            val configWritable = Files.isWritable(themeConfigFile.toPath())
-            val requiresElevation = !backgroundsWritable || !configWritable
-
-            if (requiresElevation && getPkexecPath().isBlank()) {
-                val protectedParts = buildList {
-                    if (!backgroundsWritable) add("la carpeta de fondos")
-                    if (!configWritable) add("la configuración del tema")
-                }
-                return ApplyBackgroundResult.Failure(
-                    "No se puede escribir en ${protectedParts.joinToString(" ni en ")} del tema " +
-                        "\"$themeName\" sin permisos de administrador. No se encontró pkexec: " +
-                        "instala PolicyKit (por ejemplo, el paquete \"polkit\") para continuar."
-                )
-            }
-
-            // El respaldo se crea antes de tocar cualquier archivo. Si falla, se
-            // aborta la operación para no dejar el sistema sin vuelta atrás.
-            val backupDir = try {
-                createBackup(
-                    themeName = themeName,
-                    themeDir = themeDir,
-                    themeConfigFile = themeConfigFile,
-                    targetBackground = targetBackground,
-                )
-            } catch (e: Exception) {
-                return ApplyBackgroundResult.Failure(
-                    "No se pudo crear el respaldo de la configuración de SDDM. " +
-                        "No se aplicó ningún cambio. Detalle: ${e.message ?: "error desconocido"}"
-                )
-            }
-            println("Respaldo creado en ${backupDir.absolutePath}")
-
-            val error = if (requiresElevation) {
-                applyWithElevatedPrivileges(
-                    source = background,
-                    targetBackground = targetBackground,
-                    backgroundsDir = backgroundsDir,
-                    configFile = themeConfigFile,
-                    newConfigContent = newConfigContent,
-                    backupDir = backupDir,
-                )
-            } else {
-                applyDirectly(
-                    source = background,
-                    targetBackground = targetBackground,
-                    backgroundsDir = backgroundsDir,
-                    configFile = themeConfigFile,
-                    newConfigContent = newConfigContent,
-                    backupDir = backupDir,
-                )
-            }
-
-            if (error != null) {
-                ApplyBackgroundResult.Failure(error)
-            } else {
-                saveAppliedBackground(background)
-                println("Fondo aplicado: \"${background.name}\" en el tema \"$themeName\".")
-                ApplyBackgroundResult.Success(background.name, themeName)
-            }
-        } catch (e: Exception) {
-            println("Error al aplicar el fondo: ${e.message}")
-            e.printStackTrace()
-            ApplyBackgroundResult.Failure("No se pudo aplicar el fondo: ${e.message ?: "error desconocido"}")
-        }
-    }
-
     /**
-     * Crea una copia inmutable del estado que puede cambiar `applyBackground`:
+     * Crea una copia inmutable del estado que puede cambiar la aplicación de un fondo:
      * la configuración del tema, el fondo de destino si ya existía y el registro
      * local de fondo aplicado. El manifiesto se escribe al final, de modo que una
      * carpeta sin manifiesto se considera un respaldo incompleto y se ignora.
      */
-    private fun createBackup(
+    override fun createBackup(
         themeName: String,
         themeDir: File,
         themeConfigFile: File,
@@ -638,7 +412,7 @@ class SddmRepositoryImpl(
      * fondo aplicado. El respaldo de tema se puede restaurar desde Ajustes igual
      * que los respaldos de fondos.
      */
-    private fun createThemeBackup(
+    override fun createThemeBackup(
         previousTheme: String,
         newTheme: String,
         configFile: File,
@@ -704,13 +478,13 @@ class SddmRepositoryImpl(
             ?: emptyList()
     }
 
-    private fun isDirectChild(parent: File, child: File): Boolean {
+    override fun isDirectChild(parent: File, child: File): Boolean {
         val resolvedParent = parent.canonicalFile
         val resolvedChild = child.canonicalFile
         return resolvedChild.parentFile?.canonicalFile == resolvedParent
     }
 
-    private fun readBackup(backupDir: File): SddmBackup? {
+    override fun readBackup(backupDir: File): SddmBackup? {
         val manifestFile = File(backupDir, backupManifestName)
         if (!manifestFile.isFile) return null
 
@@ -758,100 +532,12 @@ class SddmRepositoryImpl(
         )
     }
 
-    override fun restoreBackup(backupId: String): RestoreBackupResult {
-        if (backupId.isBlank() || backupId.contains('/') || backupId.contains('\\') || backupId.contains("..")) {
-            return RestoreBackupResult.Failure("Identificador de respaldo inválido.")
-        }
-
-        val backupDir = File(backupsDir, backupId)
-        if (!backupDir.isDirectory || !isDirectChild(backupsDir, backupDir)) {
-            return RestoreBackupResult.Failure("No se encontró el respaldo seleccionado.")
-        }
-
-        return try {
-            val backup = readBackup(backupDir)
-                ?: return RestoreBackupResult.Failure("El respaldo está incompleto o dañado.")
-            val manifestFile = File(backupDir, backupManifestName)
-            val manifest = Properties().apply {
-                manifestFile.inputStream().use { load(it) }
-            }
-
-            if (backup.kind == SddmBackupKind.THEME) {
-                return restoreThemeBackup(backupDir, backup)
-            }
-
-            val themeDir = manifest.getProperty("theme_dir")?.let(::File)
-                ?: return RestoreBackupResult.Failure("El respaldo no contiene la ruta del tema.")
-            val themeConfigFile = manifest.getProperty("theme_config")?.let(::File)
-                ?: return RestoreBackupResult.Failure("El respaldo no contiene la ruta de configuración.")
-            val targetBackground = manifest.getProperty("target_background")?.let(::File)
-                ?: return RestoreBackupResult.Failure("El respaldo no contiene la ruta del fondo.")
-            val targetExisted = manifest.getProperty("target_background_existed")
-                ?.toBooleanStrictOrNull() ?: false
-            val currentBgExisted = manifest.getProperty("current_bg_existed")
-                ?.toBooleanStrictOrNull() ?: false
-
-            validateBackupPaths(themeDir, themeConfigFile, targetBackground)?.let { error ->
-                return RestoreBackupResult.Failure(error)
-            }
-
-            if (!File(backupDir, "theme-config").isFile) {
-                return RestoreBackupResult.Failure("El respaldo no contiene la configuración del tema.")
-            }
-            if (targetExisted && !File(backupDir, "background").isFile) {
-                return RestoreBackupResult.Failure("El respaldo no contiene el fondo anterior.")
-            }
-            if (currentBgExisted && !File(backupDir, "current-bg.txt").isFile) {
-                return RestoreBackupResult.Failure("El respaldo no contiene el registro del fondo aplicado.")
-            }
-
-            val configWritable = if (themeConfigFile.exists()) {
-                Files.isWritable(themeConfigFile.toPath())
-            } else {
-                themeConfigFile.parentFile?.let { Files.isWritable(it.toPath()) } ?: false
-            }
-            val backgroundWritable = when {
-                targetExisted -> targetBackground.parentFile?.let { Files.isWritable(it.toPath()) } ?: false
-                targetBackground.exists() -> Files.isWritable(targetBackground.parentFile.toPath())
-                else -> true
-            }
-            val requiresElevation = !configWritable || !backgroundWritable
-
-            if (requiresElevation && getPkexecPath().isBlank()) {
-                return RestoreBackupResult.Failure(
-                    "El tema está protegido y no se puede restaurar sin permisos de administrador. " +
-                        "No se encontró pkexec: instala PolicyKit (por ejemplo, el paquete " +
-                        "\"polkit\") para continuar."
-                )
-            }
-
-            val error = if (requiresElevation) {
-                restoreWithElevatedPrivileges(backupDir, themeConfigFile, targetBackground, targetExisted)
-            } else {
-                restoreDirectly(backupDir, themeConfigFile, targetBackground, targetExisted)
-            }
-            if (error != null) {
-                return RestoreBackupResult.Failure(error)
-            }
-
-            restoreAppliedBackgroundFile(backupDir, currentBgExisted)
-            println("Respaldo restaurado: ${backupDir.absolutePath}")
-            RestoreBackupResult.Success(backup)
-        } catch (e: Exception) {
-            println("Error al restaurar el respaldo: ${e.message}")
-            e.printStackTrace()
-            RestoreBackupResult.Failure(
-                "No se pudo restaurar el respaldo: ${e.message ?: "error desconocido"}"
-            )
-        }
-    }
-
     /**
      * Solo se permite restaurar archivos dentro del tema actual. Esto evita que un
      * manifiesto manipulado pueda hacer que `pkexec` escriba fuera de la ruta
      * esperada.
      */
-    private fun validateBackupPaths(
+    override fun validateBackupPaths(
         themeDir: File,
         themeConfigFile: File,
         targetBackground: File,
@@ -874,7 +560,7 @@ class SddmRepositoryImpl(
         error.message
     }
 
-    private fun restoreDirectly(
+    override fun restoreDirectly(
         backupDir: File,
         themeConfigFile: File,
         targetBackground: File,
@@ -897,7 +583,7 @@ class SddmRepositoryImpl(
         }
     }
 
-    private fun restoreWithElevatedPrivileges(
+    override fun restoreWithElevatedPrivileges(
         backupDir: File,
         themeConfigFile: File,
         targetBackground: File,
@@ -933,7 +619,7 @@ class SddmRepositoryImpl(
         }
     }
 
-    private fun restoreAppliedBackgroundFile(backupDir: File, existed: Boolean) {
+    override fun restoreAppliedBackgroundFile(backupDir: File, existed: Boolean) {
         if (existed) {
             appliedBackgroundFile.parentFile?.mkdirs()
             Files.copy(
@@ -951,7 +637,7 @@ class SddmRepositoryImpl(
      * publica con un rename atómico. Así SDDM nunca ve un archivo a medio escribir.
      * Se resuelve el destino canónico para no reemplazar un posible symlink.
      */
-    private fun writeConfigAtomically(configFile: File, content: String) {
+    override fun writeConfigAtomically(configFile: File, content: String) {
         val resolvedTarget = configFile.canonicalFile
         val parent = resolvedTarget.parentFile
             ?: throw IllegalArgumentException(
@@ -1104,7 +790,7 @@ class SddmRepositoryImpl(
      * Aplica el fondo escribiendo directamente en el tema (cuando el usuario tiene
      * permisos sobre él).
      */
-    private fun applyDirectly(
+    override fun applyDirectly(
         source: File,
         targetBackground: File,
         backgroundsDir: File,
@@ -1181,7 +867,7 @@ class SddmRepositoryImpl(
      * administrador a través de PolicyKit. Se prepara un pequeño script que copia
      * el fondo y la nueva configuración con permisos de root.
      */
-    private fun applyWithElevatedPrivileges(
+    override fun applyWithElevatedPrivileges(
         source: File,
         targetBackground: File,
         backgroundsDir: File,
@@ -1311,7 +997,7 @@ class SddmRepositoryImpl(
         }
     }
 
-    private fun getPkexecPath(): String = findExecutable("pkexec") ?: ""
+    override fun getPkexecPath(): String = findExecutable("pkexec") ?: ""
 
     /** Escapa un valor para usarlo como argumento literal en un script de shell. */
     private fun shellQuote(value: String): String = "'" + value.replace("'", "'\\''") + "'"
@@ -1483,7 +1169,7 @@ class SddmRepositoryImpl(
      * indicadas en [destination] usen [backgroundName] y no un color de fondo. Las
      * pantallas no seleccionadas se conservan intactas.
      */
-    private fun buildConfiguredThemePreview(
+    override fun buildConfiguredThemePreview(
         content: String,
         backgroundName: String,
         destination: BackgroundDestination,
@@ -1594,7 +1280,7 @@ class SddmRepositoryImpl(
     /**
      * Reescribe un `theme.conf` tradicional para apuntar al fondo seleccionado.
      */
-    private fun buildThemeConfPreview(
+    override fun buildThemeConfPreview(
         content: String,
         fileName: String,
         backgroundsFolder: String,
@@ -1689,7 +1375,7 @@ class SddmRepositoryImpl(
         }
     }
 
-    private fun readConfiguredThemePath(themeDir: File): String? {
+    override fun readConfiguredThemePath(themeDir: File): String? {
         val metadata = File(themeDir, "metadata.desktop")
         if (!metadata.isFile) return null
 
@@ -1746,7 +1432,7 @@ class SddmRepositoryImpl(
         return values
     }
 
-    private fun restoreThemeBackup(
+    override fun restoreThemeBackup(
         backupDir: File,
         backup: SddmBackup,
     ): RestoreBackupResult {
@@ -1807,7 +1493,7 @@ class SddmRepositoryImpl(
         error.message
     }
 
-    private fun restoreThemeConfigDirectly(
+    override fun restoreThemeConfigDirectly(
         backupDir: File,
         configFile: File,
         configExisted: Boolean,
@@ -1860,7 +1546,7 @@ class SddmRepositoryImpl(
         }
     }
 
-    private fun writeThemeConfigWithElevatedPrivileges(
+    override fun writeThemeConfigWithElevatedPrivileges(
         configFile: File,
         content: String,
     ): String? {
@@ -1893,7 +1579,7 @@ class SddmRepositoryImpl(
         }
     }
 
-    private fun themeConfigTarget(): File {
+    override fun themeConfigTarget(): File {
         val target = if (sddmConfDir.isDirectory) {
             File(sddmConfDir, "99-aura-theme.conf")
         } else {
@@ -1902,15 +1588,21 @@ class SddmRepositoryImpl(
         return pathValidator.resolveSddmConfig(target)
     }
 
-    private fun isConfigFileWritable(file: File): Boolean =
+    override fun isConfigFileWritable(file: File): Boolean =
         if (file.exists()) {
             Files.isWritable(file.toPath())
         } else {
             file.parentFile?.let { Files.isWritable(it.toPath()) } ?: false
         }
 
-    private fun resolveThemeDir(themeName: String): File? =
+    override fun resolveThemeDir(themeName: String): File? =
         pathValidator.resolveThemeDir(themeName)
+
+    override fun resolveThemeConfig(themeDir: File, rawPath: String): File =
+        pathValidator.resolveThemeConfig(themeDir, rawPath)
+
+    override fun requireInside(themeDir: File, candidate: File, description: String): File =
+        pathValidator.requireInside(themeDir, candidate, description)
 
     private fun findThemeConfigFile(themeDir: File): File? {
         val configuredPath = readConfiguredThemePath(themeDir)

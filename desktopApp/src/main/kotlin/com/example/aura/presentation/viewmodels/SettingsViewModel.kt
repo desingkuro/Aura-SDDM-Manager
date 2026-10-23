@@ -2,7 +2,6 @@ package com.example.aura.presentation.viewmodels
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.aura.data.repository.SddmRepositoryImpl
 import com.example.aura.domain.models.ChangeThemeResult
 import com.example.aura.domain.models.RestoreBackupResult
 import com.example.aura.domain.models.SddmBackup
@@ -10,6 +9,9 @@ import com.example.aura.domain.models.SddmBackupKind
 import com.example.aura.domain.models.SddmDiagnostics
 import com.example.aura.domain.models.SddmTheme
 import com.example.aura.domain.repository.SddmRepository
+import com.example.aura.domain.usecase.ChangeThemeUseCase
+import com.example.aura.domain.usecase.RestoreBackupUseCase
+import com.example.aura.presentation.di.SddmModule
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -24,7 +26,11 @@ import kotlinx.coroutines.withContext
  * trabajo de disco/permisos fuera del hilo de UI.
  */
 class SettingsViewModel(
-    private val sddmRepository: SddmRepository = SddmRepositoryImpl(),
+    private val sddmRepository: SddmRepository = SddmModule.repository,
+    private val restoreBackupUseCase: RestoreBackupUseCase =
+        SddmModule.restoreBackup,
+    private val changeThemeUseCase: ChangeThemeUseCase =
+        SddmModule.changeTheme,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SettingsUiState())
@@ -96,7 +102,7 @@ class SettingsViewModel(
         }
         viewModelScope.launch {
             val result = runCatching {
-                withContext(Dispatchers.IO) { sddmRepository.restoreBackup(backup.id) }
+                withContext(Dispatchers.IO) { restoreBackupUseCase(backup.id) }
             }
             val snapshot = runCatching {
                 withContext(Dispatchers.IO) { loadSnapshot() }
@@ -175,7 +181,7 @@ class SettingsViewModel(
         }
         viewModelScope.launch {
             val result = runCatching {
-                withContext(Dispatchers.IO) { sddmRepository.changeTheme(theme.name) }
+                withContext(Dispatchers.IO) { changeThemeUseCase(theme.name) }
             }
             val snapshot = runCatching {
                 withContext(Dispatchers.IO) { loadSnapshot() }
